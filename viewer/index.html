@@ -1,0 +1,969 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arm Search Lab</title>
+<style>
+:root {
+  --bg: #0f1216; --panel: #171b21; --panel2: #1e232b; --line: #2b313b; --text: #e6e9ee; --muted: #8b94a3;
+  --accent: #f26a1b; --good: #3ccf8e; --bad: #ff5d5d; --warn: #f5c542; --ghost: #57c7ff;
+}
+:root[data-theme="light"] {
+  --bg: #eef1f5; --panel: #ffffff; --panel2: #f4f6f9; --line: #d9dee6; --text: #1b2028; --muted: #5d6675;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#app { display: grid; grid-template-columns: 360px 1fr; height: 100%; }
+#side { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 14px 14px 30px; }
+#stage { position: relative; min-width: 0; }
+#stage canvas { display: block; }
+h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .2px; }
+h1 span { color: var(--accent); }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
+.sub { color: var(--muted); font-size: 12px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 99px; background: var(--panel2);
+  border: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+.pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.pill.live i { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button, select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 9px; font: inherit; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.big { padding: 6px 12px; font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.stats div { display: flex; justify-content: space-between; gap: 8px; }
+.stats b { font-weight: 600; }
+.k { color: var(--muted); }
+/* fixed height: the text changes many times a second, and a growing box would shove the panels below it */
+#narr { height: 128px; overflow-y: auto; font-size: 12.5px; }
+#narr .t { font-weight: 600; }
+.joint { display: grid; grid-template-columns: 28px 1fr 52px; gap: 6px; align-items: center; margin: 3px 0; font-variant-numeric: tabular-nums; }
+.joint .bar { position: relative; height: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+.joint .bar i { position: absolute; top: -3px; width: 3px; height: 12px; background: var(--accent); border-radius: 2px; }
+.joint .bar u { position: absolute; top: 1px; height: 4px; background: color-mix(in srgb, var(--ghost) 50%, transparent); border-radius: 2px; }
+.joint.fixed { opacity: .45; }
+.joint label { font-weight: 600; }
+.joint input { margin: 0; }
+canvas.chart { width: 100%; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+#land { image-rendering: pixelated; cursor: crosshair; }
+.legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
+#check.ok { color: var(--good); } #check.bad { color: var(--bad); }
+#hint { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); text-align: center; color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--line); padding: 14px 18px; border-radius: 10px; }
+#hint code, .sub code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+#cams { position: absolute; right: 12px; top: 12px; display: flex; gap: 6px; }
+#collide { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: none; max-width: 60%; text-align: center;
+  background: #d9342b; color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+#drop { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 18px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); border: 3px dashed var(--accent); pointer-events: none; }
+#legend3d { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 12px; font-size: 11.5px; color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); }
+#legend3d i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+@media (max-width: 820px) {
+  #app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+  #stage { grid-row: 1; } #side { grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="row" style="justify-content:space-between">
+      <h1><span>●</span> Arm Search Lab</h1>
+      <span id="live" class="pill"><i></i><span>offline</span></span>
+    </div>
+    <div class="sub" id="lvTitle">No trace loaded</div>
+    <div class="sub" id="lvBlurb" style="margin-top:4px"></div>
+
+    <h2>Playback</h2>
+    <div class="card">
+      <div class="row" style="margin-bottom:6px">
+        <button id="bPlay" class="big">▶ Play</button>
+        <button id="bBack" title="previous frame (←)">◀︎</button>
+        <button id="bFwd" title="next frame (→)">▶︎</button>
+        <button id="bEnd" title="jump to end">⇥</button>
+        <select id="speed" title="frames per second">
+          <option value="2">2 /s</option><option value="6">6 /s</option><option value="20" selected>20 /s</option>
+          <option value="80">80 /s</option><option value="300">300 /s</option><option value="1500">1500 /s</option>
+        </select>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0">
+      <div class="row" style="justify-content:space-between;margin-top:4px">
+        <label class="sub"><input type="checkbox" id="showTries" checked> ghost arm for tries</label>
+        <label class="sub"><input type="checkbox" id="autoplay" checked> play new runs</label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="bExec">Move to best ↘</button>
+        <button id="bHome">Home</button>
+        <button id="bManual">Manual jog</button>
+        <button id="bOpen">Open trace…</button>
+        <input type="file" id="file" accept=".json" hidden>
+      </div>
+    </div>
+
+    <h2>What's happening</h2>
+    <div class="card" id="narr"><span class="sub">Run <code>python3 -m viewer.demo</code> to check everything works.</span></div>
+
+    <h2>Run stats</h2>
+    <div class="card stats">
+      <div><span class="k">frame</span><b id="sFrame">–</b></div>
+      <div><span class="k">evaluations</span><b id="sEval">–</b></div>
+      <div><span class="k">current score</span><b id="sCur">–</b></div>
+      <div><span class="k">best so far</span><b id="sBest">–</b></div>
+      <div><span class="k" id="sAccK">moves</span><b id="sAcc">–</b></div>
+      <div><span class="k">rejected</span><b id="sRej">–</b></div>
+      <div><span class="k">worse moves taken</span><b id="sWorse">–</b></div>
+      <div><span class="k">restarts</span><b id="sRest">–</b></div>
+      <div><span class="k" id="sTK">temperature T</span><b id="sT">–</b></div>
+      <div><span class="k">algorithm</span><b id="sAlgo">–</b></div>
+    </div>
+    <div class="sub" id="check" style="margin-top:5px"></div>
+
+    <h2>Score over the run</h2>
+    <canvas id="chart" class="chart" width="660" height="150"></canvas>
+    <div class="legend"><span><span style="color:var(--accent)">━</span> current &nbsp;<span style="color:var(--good)">━</span> best &nbsp;<span style="color:var(--warn)">┄</span> average &nbsp;<span style="color:var(--ghost)">┄</span> T</span><span>lower is better</span></div>
+
+    <h2 id="landH">Landscape</h2>
+    <canvas id="land" class="chart" width="271" height="301"></canvas>
+    <div class="legend" id="landLegend"><span>only for 2-motor levels</span></div>
+
+    <h2>Motors</h2>
+    <div id="joints"></div>
+    <div class="sub" id="manualInfo" style="margin-top:6px"></div>
+  </aside>
+
+  <main id="stage">
+    <div id="cams">
+      <button data-cam="persp" class="on">3D</button>
+      <button data-cam="side">Side</button>
+      <button data-cam="top">Top</button>
+      <button id="bTheme" title="light / dark">◐</button>
+    </div>
+    <div id="legend3d">
+      <span><i style="background:var(--accent)"></i>arm (current pose)</span>
+      <span><i style="background:var(--ghost)"></i>ghost (pose being tried)</span>
+      <span><i style="background:#ffd23f"></i>target</span>
+      <span><i style="background:var(--good)"></i>tool-tip path</span>
+      <span id="legObs" style="display:none"><i style="background:repeating-linear-gradient(45deg,#f5c542 0 3px,#1b1b1b 3px 6px)"></i>obstacle (the arm may not touch it)</span>
+      <span id="legCrate" style="display:none"><i style="background:#9a6b3f"></i>crate (don't touch)</span>
+    </div>
+    <div id="hint">Start the server with <code>python3 -m viewer</code>,<br>then run <code>python3 -m viewer.demo</code> or a lab's <code>run.py</code>.<br><span style="font-size:11px">You can also drop a trace .json file here.</span></div>
+    <div id="drop">Drop a trace .json</div>
+    <div id="collide">⚠ This pose goes through an obstacle or the floor. It isn't physically possible, so the score includes the collision penalty.</div>
+  </main>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = id => document.getElementById(id);
+const D2R = Math.PI / 180;
+const AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+
+// ------------------------------------------------------------------ theme
+const THEME_KEY = 'arm-lab-theme';
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
+  if (scene) scene.background = new THREE.Color(t === 'light' ? 0xdfe4ea : 0x12161c);
+  if (grid) grid.material.opacity = t === 'light' ? 0.5 : 0.35;
+}
+let savedTheme = 'dark';
+try { savedTheme = localStorage.getItem(THEME_KEY) || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'); } catch (e) {}
+
+// ------------------------------------------------------------------ scene
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(3, 6, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 20 });
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+const floor = new THREE.Mesh(new THREE.CircleGeometry(6, 64), new THREE.MeshStandardMaterial({ color: 0x3a4250, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+const grid = new THREE.GridHelper(12, 48, 0x8899aa, 0x8899aa);
+grid.material.transparent = true;
+grid.position.y = 0.001;
+scene.add(grid);
+const axes = new THREE.AxesHelper(0.35);
+axes.position.set(-0.9, 0.002, 0.9);
+scene.add(axes);
+applyTheme(savedTheme);
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+const CAMS = {
+  persp: { pos: [2.9, 2.3, 3.4], at: [0.7, 0.9, 0] },
+  side: { pos: [0.8, 1.1, 4.6], at: [0.8, 1.1, 0] },
+  top: { pos: [0.6, 5.2, 0.01], at: [0.6, 0, 0] },
+};
+function setCam(name) {
+  const c = CAMS[name];
+  camera.position.fromArray(c.pos);
+  controls.target.fromArray(c.at);
+  controls.update();
+  document.querySelectorAll('[data-cam]').forEach(b => b.classList.toggle('on', b.dataset.cam === name));
+}
+document.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => setCam(b.dataset.cam));
+$('bTheme').onclick = () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+setCam('persp');
+
+// ------------------------------------------------------------------ the arm
+const MAT = {
+  orange: new THREE.MeshStandardMaterial({ color: 0xf26a1b, roughness: 0.38, metalness: 0.15 }),
+  black: new THREE.MeshStandardMaterial({ color: 0x1d1f23, roughness: 0.6, metalness: 0.2 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x33363c, roughness: 0.45, metalness: 0.5 }),
+  steel: new THREE.MeshStandardMaterial({ color: 0xc9ced6, roughness: 0.25, metalness: 0.9 }),
+};
+const GHOST = new THREE.MeshStandardMaterial({ color: 0x57c7ff, transparent: true, opacity: 0.28, roughness: 0.5, depthWrite: false });
+
+function mesh(geo, mat, parent, pos = [0, 0, 0], rot = null) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.fromArray(pos);
+  if (rot) m.rotation.set(...rot);
+  m.castShadow = mat !== GHOST;
+  m.receiveShadow = mat !== GHOST;
+  parent.add(m);
+  return m;
+}
+const cylZ = (r, len, seg = 40) => new THREE.CylinderGeometry(r, r, len, seg).rotateX(Math.PI / 2);
+const cylX = (r, len, seg = 40, r2 = r) => new THREE.CylinderGeometry(r2, r, len, seg).rotateZ(-Math.PI / 2);
+
+function hub(parent, r, len, pos, ghost) {
+  mesh(cylZ(r, len), ghost ? GHOST : MAT.orange, parent, pos);
+  if (ghost) return;
+  for (const s of [1, -1]) mesh(cylZ(r * 0.62, 0.012), MAT.black, parent, [pos[0], pos[1], pos[2] + s * (len / 2 + 0.004)]);
+}
+
+function buildArm(arm, ghost = false) {
+  const M = k => (ghost ? GHOST : MAT[k]);
+  const root = new THREE.Group();
+  const J = arm.joints;
+  if (!ghost) {
+    // base plate with bolts, black pedestal
+    mesh(new RoundedBoxGeometry(0.72, 0.05, 0.72, 3, 0.015), MAT.black, root, [0, 0.025, 0]);
+    for (const x of [-0.3, 0.3]) for (const z of [-0.3, 0.3]) mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 12), MAT.steel, root, [x, 0.058, z]);
+    mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.2, 48), MAT.black, root, [0, 0.15, 0]);
+  }
+  const groups = [];
+  let parent = root;
+  J.forEach((j, i) => {
+    const g = new THREE.Group();
+    g.position.fromArray(j.offset);
+    g.userData.axis = AX[j.axis];
+    parent.add(g);
+    groups.push(g);
+    parent = g;
+  });
+  const nextOff = i => (i + 1 < J.length ? J[i + 1].offset : arm.tool);
+
+  // A1: turret and shoulder housing
+  {
+    const g = groups[0], sh = nextOff(0)[1];
+    mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.12, 48), M('orange'), g, [0, 0.31, 0]);
+    mesh(new RoundedBoxGeometry(0.34, sh - 0.3, 0.42, 4, 0.06), M('orange'), g, [-0.02, 0.3 + (sh - 0.3) / 2, 0]);
+  }
+  // A2: shoulder hub + upper arm + elbow hub + cable
+  {
+    const g = groups[1], L = nextOff(1)[0];
+    hub(g, 0.17, 0.44, [0, 0, 0], ghost);
+    mesh(new RoundedBoxGeometry(L, 0.2, 0.22, 4, 0.07), M('orange'), g, [L / 2, 0, 0.0]);
+    hub(g, 0.13, 0.32, [L, 0, 0], ghost);
+    if (!ghost) {
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.05, 0.14, 0.2), new THREE.Vector3(0.3, 0.2, 0.17),
+        new THREE.Vector3(0.7, 0.17, 0.15), new THREE.Vector3(L - 0.05, 0.12, 0.17)]);
+      mesh(new THREE.TubeGeometry(curve, 40, 0.022, 10), MAT.black, g);
+    }
+  }
+  // A3: forearm housing with counterweight
+  {
+    const g = groups[2], L = nextOff(2)[0];
+    mesh(new RoundedBoxGeometry(L + 0.2, 0.2, 0.22, 4, 0.07), M('orange'), g, [(L - 0.2) / 2, 0, 0]);
+    mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.06, 32).rotateZ(Math.PI / 2), M('black'), g, [L, 0, 0]);
+  }
+  // A4: forearm tube
+  {
+    const g = groups[3], L = nextOff(3)[0];
+    mesh(cylX(0.08, L, 40, 0.065), M('orange'), g, [L / 2, 0, 0]);
+    mesh(cylX(0.083, 0.03), M('black'), g, [0.02, 0, 0]);
+  }
+  // A5: wrist
+  {
+    const g = groups[4], L = nextOff(4)[0];
+    hub(g, 0.075, 0.17, [0, 0, 0], ghost);
+    mesh(new RoundedBoxGeometry(L, 0.11, 0.13, 3, 0.04), M('orange'), g, [L / 2, 0, 0]);
+  }
+  // A6: flange + gripper
+  const fingers = [];
+  {
+    const g = groups[5], L = arm.tool[0];
+    mesh(cylX(0.06, 0.025), M('dark'), g, [0.0125, 0, 0]);
+    mesh(new RoundedBoxGeometry(0.05, 0.08, 0.17, 2, 0.01), M('steel'), g, [0.045, 0, 0]);
+    for (const s of [1, -1]) {
+      const f = new THREE.Group();
+      f.position.set(0.07, 0, s * 0.055);
+      g.add(f);
+      mesh(new RoundedBoxGeometry(L - 0.02 + 0.03, 0.05, 0.022, 2, 0.006), M('steel'), f, [(L - 0.02 + 0.03) / 2 - 0.01, 0, 0]);
+      f.userData.side = s;
+      fingers.push(f);
+    }
+  }
+  const tcp = new THREE.Object3D();
+  tcp.position.fromArray(arm.tool);
+  groups[J.length - 1].add(tcp);
+  return { root, groups, tcp, fingers, setPose(a) { groups.forEach((g, i) => g.quaternion.setFromAxisAngle(g.userData.axis, (a[i] || 0) * D2R)); },
+           grip(open) { fingers.forEach(f => (f.position.z = f.userData.side * (0.02 + 0.035 * open))); } };
+}
+
+let ARM = null, arm = null, ghost = null;
+function installArm(def) {
+  if (ARM && JSON.stringify(ARM) === JSON.stringify(def)) return;
+  if (arm) { scene.remove(arm.root); scene.remove(ghost.root); }
+  ARM = def;
+  arm = buildArm(def);
+  ghost = buildArm(def, true);
+  ghost.root.visible = false;
+  scene.add(arm.root, ghost.root);
+  shown = (def.home || def.joints.map(() => 0)).slice();
+  goal = shown.slice();
+  arm.setPose(shown);
+  arm.grip(1);
+  buildJointRows();
+}
+
+// ------------------------------------------------------------------ populations (GA, ES, PSO)
+// forward kinematics in JS, from the arm definition: joint positions for a pose
+const _m = new THREE.Matrix4(), _t = new THREE.Matrix4(), _r = new THREE.Matrix4();
+function jointPoints(a) {
+  _m.identity();
+  const pts = [];
+  ARM.joints.forEach((j, i) => {
+    _m.multiply(_t.makeTranslation(...j.offset));
+    _m.multiply(_r.makeRotationAxis(AX[j.axis], (a[i] || 0) * D2R));
+    pts.push(new THREE.Vector3().setFromMatrixPosition(_m));
+  });
+  _m.multiply(_t.makeTranslation(...ARM.tool));
+  pts.push(new THREE.Vector3().setFromMatrixPosition(_m));
+  return pts;              // A1 .. A6 then the tool tip
+}
+let popLines = null, popTips = null;
+function drawPopulation(f) {
+  if (popLines) { scene.remove(popLines, popTips); popLines.geometry.dispose(); popTips.geometry.dispose(); popLines = popTips = null; }
+  if (!f || !ARM) return;
+  const order = f.S.map((s, i) => i).sort((x, y) => f.S[x] - f.S[y]);
+  const rank = new Array(f.S.length);
+  order.forEach((i, r) => (rank[i] = r / Math.max(1, order.length - 1)));
+  const lp = [], lc = [], tp = [], tc = [];
+  f.P.forEach((a, i) => {
+    const pts = jointPoints(a), c = new THREE.Color().setHSL(0.33 * (1 - rank[i]), 0.9, 0.55);
+    for (let k = 1; k < pts.length - 1; k++) { lp.push(...pts[k].toArray(), ...pts[k + 1].toArray()); lc.push(c.r, c.g, c.b, c.r, c.g, c.b); }
+    tp.push(...pts[pts.length - 1].toArray()); tc.push(c.r, c.g, c.b);
+  });
+  const g1 = new THREE.BufferGeometry();
+  g1.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  g1.setAttribute('color', new THREE.Float32BufferAttribute(lc, 3));
+  popLines = new THREE.LineSegments(g1, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55 }));
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3));
+  g2.setAttribute('color', new THREE.Float32BufferAttribute(tc, 3));
+  popTips = new THREE.Points(g2, new THREE.PointsMaterial({ vertexColors: true, size: 0.035 }));
+  scene.add(popLines, popTips);
+}
+
+// a pose that hits something turns the arm (or the ghost) red
+const ORANGE = new THREE.Color(0xf26a1b), RED = new THREE.Color(0xe0302a), BLUE = new THREE.Color(0x57c7ff);
+function setCollide(solid, ghostHit) {
+  MAT.orange.color.copy(solid ? RED : ORANGE);
+  MAT.orange.emissive.set(solid ? 0x5a0000 : 0x000000);
+  GHOST.color.copy(ghostHit ? RED : BLUE);
+  $('collide').style.display = solid ? 'block' : 'none';
+}
+
+// ------------------------------------------------------------------ level props
+const levelGroup = new THREE.Group();
+scene.add(levelGroup);
+function hazardTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f5c542'; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#1b1b1b';
+  for (let i = -64; i < 128; i += 22) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 11, 0); x.lineTo(i + 11 - 64, 64); x.lineTo(i - 64, 64); x.fill(); }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+let targetMesh = null, targetRing = null;
+function buildLevel(lv) {
+  const bx = lv.boxes || [];
+  $('legObs').style.display = bx.some(([, hi]) => hi[1] >= 0.3) ? '' : 'none';
+  $('legCrate').style.display = bx.some(([, hi]) => hi[1] < 0.3) ? '' : 'none';
+  levelGroup.clear();
+  const T = new THREE.Vector3().fromArray(lv.target);
+  targetMesh = new THREE.Mesh(new THREE.SphereGeometry(0.045, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 1.2 }));
+  targetMesh.position.copy(T);
+  levelGroup.add(targetMesh);
+  targetRing = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.006, 8, 48), new THREE.MeshBasicMaterial({ color: 0xffd23f }));
+  targetRing.position.copy(T);
+  levelGroup.add(targetRing);
+  const drop = new THREE.BufferGeometry().setFromPoints([T.clone(), new THREE.Vector3(T.x, 0, T.z)]);
+  const dl = new THREE.Line(drop, new THREE.LineDashedMaterial({ color: 0xffd23f, dashSize: 0.04, gapSize: 0.03 }));
+  dl.computeLineDistances();
+  levelGroup.add(dl);
+  if (lv.down) {
+    const d = new THREE.Vector3().fromArray(lv.down).normalize();
+    levelGroup.add(new THREE.ArrowHelper(d, T.clone().addScaledVector(d, -0.32), 0.26, 0xffd23f, 0.07, 0.04));
+  }
+  for (const [lo, hi] of lv.boxes || []) {
+    const size = hi.map((h, i) => h - lo[i]);
+    const crate = hi[1] < 0.3;
+    const tex = crate ? null : hazardTexture();
+    if (tex) tex.repeat.set(2, Math.max(1, size[1] * 6));
+    const m = new THREE.Mesh(new THREE.BoxGeometry(...size),
+      crate ? new THREE.MeshStandardMaterial({ color: 0x9a6b3f, roughness: 0.8 }) : new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }));
+    m.position.set(...lo.map((l, i) => l + size[i] / 2));
+    m.castShadow = m.receiveShadow = true;
+    levelGroup.add(m);
+  }
+}
+
+// trail of the tool tip (accepted moves) and faint dots for tries
+const trailMat = new THREE.LineBasicMaterial({ vertexColors: true });
+let trail = null, tryDots = null;
+function scoreColor(s, lo, hi) {
+  const t = Math.min(1, Math.max(0, (s - lo) / Math.max(1e-6, hi - lo)));
+  return new THREE.Color().setHSL(0.36 * (1 - t), 0.85, 0.55);
+}
+
+// ------------------------------------------------------------------ trace state
+let TR = null, idx = 0, playing = false, acc = 0, lastNarr = 0;
+let atRest = false;   // arm folded at its home pose, run loaded but not started
+let LIVE_HOME = null; // rest pose from the current armlab/arm.json (saved runs carry their own, possibly older, copy)
+const restPose = () => (LIVE_HOME || ARM.home || ARM.joints.map(() => 0)).slice();
+let shown = [0, 0, 0, 0, 0, 0], goal = shown.slice(), tween = null, manual = false;
+let pre = null;
+
+function precompute(tr) {
+  const F = tr.frames, n = F.length;
+  const cur = new Int32Array(n), best = new Int32Array(n), nAcc = new Int32Array(n), nRej = new Int32Array(n), nWorse = new Int32Array(n), nRest = new Int32Array(n);
+  let c = -1, b = -1, a = 0, r = 0, w = 0, rs = 0;
+  for (let i = 0; i < n; i++) {
+    const f = F[i];
+    if (f.k === 'move' || f.k === 'restart' || f.k === 'gen') {
+      if (f.k === 'move') { a++; if (c >= 0 && f.s > F[c].s + 1e-12) w++; }
+      else if (f.k === 'gen') a++;
+      else rs++;
+      c = i;
+      if (b < 0 || f.s < F[b].s) b = i;
+    } else r++;
+    cur[i] = c; best[i] = b; nAcc[i] = a; nRej[i] = r; nWorse[i] = w; nRest[i] = rs;
+  }
+  const scores = F.flatMap(f => (f.mean != null ? [f.s, f.mean] : [f.s])).filter(s => s < 5);
+  const lo = Math.min(...scores, 0), hi = Math.max(0.5, ...scores.slice(0, 2000));
+  return { cur, best, nAcc, nRej, nWorse, nRest, lo, hi };
+}
+
+function loadTrace(tr, autoplay = $('autoplay').checked) {
+  TR = tr;
+  execAnim = null; tween = null; lastCheck = -1;
+  installArm(tr.arm);
+  buildLevel(tr.level);
+  pre = precompute(tr);
+  idx = 0;
+  $('scrub').max = Math.max(0, tr.frames.length - 1);
+  $('scrub').value = 0;
+  $('hint').style.display = 'none';
+  $('lvTitle').innerHTML = `${tr.lab ? `<span class="k">lab ${esc(tr.lab)}</span><br>` : ''}<b>Level ${tr.level.number} · ${tr.level.title}</b> — ${tr.algo}${tr.note ? ` <span class="k">(${esc(tr.note)})</span>` : ''}`;
+  $('lvBlurb').textContent = tr.level.blurb || '';
+  $('sAlgo').textContent = tr.algo;
+  buildTrail();
+  buildJointRows();
+  drawLandBase();
+  setManual(false);
+  const startPose = tr.frames.length ? tr.frames[0].a : tr.level.start;
+  shown = startPose.slice(); goal = shown.slice(); arm.setPose(shown); arm.grip(1);
+  showFrame(0, true);
+  if (tr.level.free.length === 2 && tr.level.free[0] === 1 && tr.level.free[1] === 2) setCam('side'); else setCam('persp');
+  if (autoplay) play(true);
+  else {
+    atRest = true;
+    shown = restPose(); goal = shown.slice(); arm.setPose(shown);
+    setCollide(false, false); ghost.root.visible = false;
+    $('narr').innerHTML = `<span class="t">At rest</span> · The arm is folded up. The last run saved before you opened the page is loaded: press <b>Play</b> and the arm unfolds to its start pose and replays it. Anything you run now plays here.`;
+  }
+}
+
+function buildTrail() {
+  if (trail) { levelGroup.remove(trail); trail.geometry.dispose(); }
+  if (tryDots) { levelGroup.remove(tryDots); tryDots.geometry.dispose(); }
+  const F = TR.frames;
+  const pts = [], cols = [], tp = [];
+  F.forEach(f => {
+    if (f.k === 'try') { tp.push(...f.p); return; }
+    pts.push(...f.p);
+    const c = scoreColor(f.s, pre.lo, pre.hi);
+    cols.push(c.r, c.g, c.b);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.setDrawRange(0, 0);
+  trail = new THREE.Line(g, trailMat);
+  levelGroup.add(trail);
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3));
+  g2.setDrawRange(0, 0);
+  tryDots = new THREE.Points(g2, new THREE.PointsMaterial({ color: 0x57c7ff, size: 0.012, transparent: true, opacity: 0.45 }));
+  levelGroup.add(tryDots);
+  // index maps: frames -> how many accepted / tries so far
+  const mc = new Int32Array(F.length), tc = new Int32Array(F.length);
+  let m = 0, t = 0;
+  F.forEach((f, i) => { if (f.k === 'try') t++; else m++; mc[i] = m; tc[i] = t; });
+  pre.mc = mc; pre.tc = tc;
+}
+
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const f3 = v => (v == null ? '–' : v >= 9.5 ? v.toFixed(2) : v.toFixed(3));
+
+function showFrame(i, snap = false) {
+  if (snap) atRest = false;
+  if (!TR || !TR.frames.length) return;
+  idx = Math.max(0, Math.min(TR.frames.length - 1, i));
+  const F = TR.frames, f = F[idx];
+  const c = pre.cur[idx], b = pre.best[idx];
+  const curF = c >= 0 ? F[c] : null, bestF = b >= 0 ? F[b] : null;
+  if (!manual) {
+    if (curF) {
+      goal = curF.a.slice();
+      if (snap || speed() > 25) { shown = goal.slice(); tween = null; } else tween = { from: shown.slice(), to: goal.slice(), t: 0, dur: Math.min(0.5, 0.9 / speed()) };
+    }
+    ghost.root.visible = $('showTries').checked && f.k === 'try';
+    if (ghost.root.visible) ghost.setPose(f.a);
+  }
+  setCollide(!manual && curF && curF.c, !manual && f.k === 'try' && f.c);
+  trail.geometry.setDrawRange(0, pre.mc[idx]);
+  tryDots.geometry.setDrawRange(0, $('showTries').checked ? pre.tc[idx] : 0);
+  $('scrub').value = idx;
+  $('sFrame').textContent = `${idx + 1} / ${F.length}`;
+  $('sEval').textContent = (TR.evaluations || F.length).toLocaleString();
+  $('sCur').textContent = curF ? f3(curF.s) : '–';
+  $('sBest').textContent = bestF ? f3(bestF.s) : '–';
+  $('sAcc').textContent = pre.nAcc[idx];
+  $('sRej').textContent = pre.nRej[idx];
+  $('sWorse').textContent = pre.nWorse[idx];
+  $('sRest').textContent = Math.max(0, pre.nRest[idx] - 1);
+  const isGen = f.k === 'gen' || (curF && curF.k === 'gen');
+  $('sAccK').textContent = isGen ? 'generations' : 'moves';
+  $('sTK').textContent = (curF && curF.d != null) ? 'diversity' : 'temperature T';
+  $('sT').textContent = f.T != null ? f.T.toPrecision(3) : (curF && curF.d != null ? curF.d.toFixed(2) : '–');
+  drawPopulation(curF && curF.P ? curF : null);
+  // while playing, refresh the text at most 4 times a second so it can be read
+  const now = performance.now();
+  if (!playing || snap || idx === F.length - 1 || now - lastNarr > 250) { narrate(f, curF, idx); lastNarr = now; }
+  updateJointRows(curF ? curF.a : f.a, f.k === 'try' ? f.a : null);
+  drawChart();
+  drawLandOverlay();
+}
+
+function narrate(f, curF, i) {
+  const F = TR.frames;
+  let prev = null;
+  for (let j = i - 1; j >= 0; j--) if (F[j].k !== 'try') { prev = F[j]; break; }
+  let t = '', d = '';
+  if (f.k === 'gen') {
+    t = `Generation ${pre.nAcc[i] - 1}`;
+    d = `${f.P.length} arms (thin lines, green = best, red = worst). Best ${f3(f.s)}, average ${f3(f.mean)}${f.d != null ? `, diversity ${f.d.toFixed(2)}` : ''}. The orange arm is the best of this generation.`;
+  } else if (f.k === 'restart') { t = i === 0 ? 'Start' : 'Restart'; d = `New climb from (${f.a.map(Math.round).join(', ')}). Score ${f3(f.s)}.`; }
+  else if (f.k === 'try') {
+    const better = prev && f.s < prev.s;
+    t = 'Trying a pose'; d = `Ghost arm: score ${f3(f.s)} vs ${prev ? f3(prev.s) : '–'} where the arm is now — ${better ? '<span style="color:var(--good)">better</span>' : '<span style="color:var(--bad)">not better</span>'}${f.T != null ? ', rejected' : ''}.`;
+  } else {
+    const worse = prev && f.s > prev.s + 1e-12;
+    t = worse ? 'Took a WORSE move' : 'Moved';
+    d = worse ? `Score went up ${f3(prev.s)} → ${f3(f.s)}. ${f.T != null ? `At T = ${f.T.toPrecision(3)} that happens with probability about ${(f.T ? Math.exp(-(f.s - prev.s) / f.T) : 0).toFixed(2)}.` : ''} This is how stochastic search escapes a local optimum.`
+              : `Score ${prev ? f3(prev.s) + ' → ' : ''}${f3(f.s)}.`;
+  }
+  if (i === F.length - 1) {
+    const b = F[pre.best[i]];
+    const miss = Math.hypot(...b.p.map((v, k) => v - TR.level.target[k]));
+    t = 'Finished'; d = `Best pose (${b.a.map(Math.round).join(', ')}) scores ${f3(b.s)}; the tool tip is ${(miss * 100).toFixed(1)} cm from the target. ${miss < 0.05 ? 'Within 5 cm.' : 'Not within 5 cm: stuck on a local optimum?'} Press <b>Move to best</b>.`;
+  }
+  const msg = f.m ? `<div style="margin-top:3px;color:var(--warn)">${esc(f.m)}</div>` : '';
+  $('narr').innerHTML = `<span class="t">${t}</span> · ${d}${msg}`;
+}
+
+// ------------------------------------------------------------------ joints panel
+function buildJointRows() {
+  if (!ARM) return;
+  const free = TR ? TR.level.free : ARM.joints.map((_, i) => i);
+  $('joints').innerHTML = ARM.joints.map((j, i) => `
+    <div class="joint ${manual || free.includes(i) ? '' : 'fixed'}" title="${j.label}: ${j.min}° to ${j.max}°, turns about ${j.axis}">
+      <label>${j.name}</label>
+      <div class="bar" id="jb${i}"><u></u><i></i></div>
+      <span id="jv${i}" style="text-align:right">0°</span>
+      <span></span><input type="range" id="js${i}" min="${j.min}" max="${j.max}" value="0" step="1" style="display:${manual ? 'block' : 'none'}"><span class="k" style="font-size:10px">${j.label}</span>
+    </div>`).join('');
+  ARM.joints.forEach((j, i) => {
+    $('js' + i).oninput = e => { shown[i] = goal[i] = +e.target.value; tween = null; arm.setPose(shown); updateJointRows(shown); manualReadout(); drawLandOverlay(); };
+  });
+}
+function updateJointRows(a, tryA = null) {
+  if (!ARM) return;
+  ARM.joints.forEach((j, i) => {
+    const pct = v => ((v - j.min) / (j.max - j.min)) * 100;
+    const bar = $('jb' + i);
+    if (!bar) return;
+    bar.querySelector('i').style.left = `calc(${pct(a[i])}% - 1px)`;
+    const u = bar.querySelector('u');
+    if (tryA && tryA[i] !== a[i]) { const l = Math.min(pct(a[i]), pct(tryA[i])), r = Math.max(pct(a[i]), pct(tryA[i])); u.style.left = l + '%'; u.style.width = (r - l) + '%'; }
+    else u.style.width = 0;
+    $('jv' + i).textContent = `${Math.round(a[i] * 10) / 10}°`;
+    if (manual) $('js' + i).value = a[i];
+  });
+}
+
+function setManual(on) {
+  manual = on;
+  if (on) { setCollide(false, false); drawPopulation(null); }
+  $('bManual').classList.toggle('on', on);
+  if (on) { pause(); ghost.root.visible = false; tween = null; shown = shown.map(v => Math.round(v)); goal = shown.slice(); arm.setPose(shown); }
+  buildJointRows();
+  updateJointRows(shown);
+  manualReadout();
+  drawLandOverlay();
+}
+function manualReadout() {
+  if (!manual) { $('manualInfo').innerHTML = ''; return; }
+  arm.root.updateMatrixWorld(true);
+  const p = arm.tcp.getWorldPosition(new THREE.Vector3());
+  let s = `Tool tip <b>(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})</b>`;
+  const lv = TR && TR.level;
+  if (lv) {
+    const d = p.distanceTo(new THREE.Vector3().fromArray(lv.target));
+    s += ` · distance to target <b>${d.toFixed(3)} m</b>`;
+    if (lv.down) {
+      const q = arm.groups[5].getWorldQuaternion(new THREE.Quaternion());
+      const dir = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+      s += ` · gripper ${(dir.angleTo(new THREE.Vector3().fromArray(lv.down)) / D2R).toFixed(1)}° from straight down`;
+    }
+  }
+  $('manualInfo').innerHTML = s + '<br><span class="k">Drag the sliders to check your hand calculations. Click the landscape to jump there.</span>';
+}
+
+// ------------------------------------------------------------------ charts
+function drawChart() {
+  const cv = $('chart'), x = cv.getContext('2d'), W = cv.width, H = cv.height;
+  x.clearRect(0, 0, W, H);
+  if (!TR || !TR.frames.length) return;
+  const F = TR.frames, n = F.length, hi = Math.max(pre.hi, 0.05);
+  const X = i => 6 + (i / Math.max(1, n - 1)) * (W - 12), Y = s => H - 8 - (Math.min(s, hi) / hi) * (H - 16);
+  const step = Math.max(1, Math.floor(n / 1200));
+  const css = getComputedStyle(document.documentElement);
+  // temperature
+  if (F.some(f => f.T != null)) {
+    const Tmax = Math.max(...F.filter(f => f.T != null).map(f => f.T));
+    x.strokeStyle = css.getPropertyValue('--ghost'); x.setLineDash([4, 3]); x.beginPath();
+    for (let i = 0; i < n; i += step) if (F[i].T != null) { const y = H - 8 - (F[i].T / Tmax) * (H - 16); i ? x.lineTo(X(i), y) : x.moveTo(X(i), y); }
+    x.stroke(); x.setLineDash([]);
+  }
+  // population average (GA, ES, PSO)
+  if (F.some(f => f.mean != null)) {
+    x.strokeStyle = css.getPropertyValue('--warn'); x.lineWidth = 1.2; x.setLineDash([2, 3]); x.beginPath();
+    let st = false;
+    for (let i = 0; i < n; i += step) if (F[i].mean != null) { const y = Y(F[i].mean); st ? x.lineTo(X(i), y) : (x.moveTo(X(i), y), st = true); }
+    x.stroke(); x.setLineDash([]);
+  }
+  for (const [arr, col] of [[pre.cur, css.getPropertyValue('--accent')], [pre.best, css.getPropertyValue('--good')]]) {
+    x.strokeStyle = col; x.lineWidth = 1.6; x.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i += step) { const c = arr[i]; if (c < 0) continue; const y = Y(F[c].s); started ? x.lineTo(X(i), y) : (x.moveTo(X(i), y), started = true); }
+    x.stroke();
+  }
+  x.fillStyle = css.getPropertyValue('--muted'); x.font = '18px sans-serif';
+  x.fillText(hi.toFixed(2), 8, 20); x.fillText('0', 8, H - 12);
+  x.strokeStyle = css.getPropertyValue('--text'); x.globalAlpha = 0.6; x.beginPath(); x.moveTo(X(idx), 0); x.lineTo(X(idx), H); x.stroke(); x.globalAlpha = 1;
+}
+
+let landImg = null, landInfo = null;
+function viridis(t) {
+  const S = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
+  t = Math.min(1, Math.max(0, t)) * (S.length - 1);
+  const i = Math.min(S.length - 2, Math.floor(t)), f = t - i;
+  return S[i].map((v, k) => Math.round(v + (S[i + 1][k] - v) * f));
+}
+function drawLandBase() {
+  const cv = $('land');
+  const L = TR && TR.landscape;
+  landInfo = L;
+  if (!L) {
+    cv.width = 300; cv.height = 60;
+    const x = cv.getContext('2d');
+    x.clearRect(0, 0, 300, 60);
+    x.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted');
+    x.font = '13px sans-serif';
+    x.fillText(TR ? `${TR.level.free.length} motors move here: too many dimensions to draw.` : 'Load a level 1 trace.', 10, 34);
+    $('landH').textContent = 'Landscape';
+    $('landLegend').innerHTML = '<span>drawn for 2-motor levels only</span>';
+    landImg = null;
+    return;
+  }
+  const V = L.values, R = V.length, C = V[0].length;
+  cv.width = R; cv.height = C;
+  const x = cv.getContext('2d');
+  const img = x.createImageData(R, C);
+  let mx = 0;
+  V.forEach(row => row.forEach(v => (mx = Math.max(mx, v))));
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const v = V[r][c], k = ((C - 1 - c) * R + r) * 4;
+    const rgb = v < 0 ? ((r + c) % 4 < 2 ? [40, 40, 44] : [70, 70, 76]) : viridis(1 - Math.sqrt(v / mx));
+    img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = 255;
+  }
+  landImg = img;
+  const [i, j] = L.joints;
+  $('landH').textContent = `Landscape · ${ARM.joints[i].name} across, ${ARM.joints[j].name} up`;
+  $('landLegend').innerHTML = `<span>${ARM.joints[i].name} ${L.lo[0]}°…${ARM.joints[i].max}°</span><span>bright = close to target · grey = collision</span>`;
+}
+function drawLandOverlay() {
+  if (!landImg) return;
+  const cv = $('land'), x = cv.getContext('2d'), L = landInfo, R = cv.width, C = cv.height;
+  x.putImageData(landImg, 0, 0);
+  const [ji, jj] = L.joints;
+  const P = a => [(a[ji] - L.lo[0]) / L.step, C - 1 - (a[jj] - L.lo[1]) / L.step];
+  if (TR && !manual) {
+    const F = TR.frames;
+    if ($('showTries').checked) {
+      x.fillStyle = 'rgba(87,199,255,.55)';
+      for (let k = 0; k <= idx; k++) if (F[k].k === 'try') { const [px, py] = P(F[k].a); x.fillRect(px - 0.5, py - 0.5, 1.4, 1.4); }
+    }
+    x.strokeStyle = '#ff7a2f'; x.lineWidth = 1.3; x.beginPath();
+    let open = false;
+    for (let k = 0; k <= idx; k++) {
+      const f = F[k];
+      if (f.k === 'try') continue;
+      const [px, py] = P(f.a);
+      if (f.k === 'restart' || !open) { x.moveTo(px, py); open = true; } else x.lineTo(px, py);
+    }
+    x.stroke();
+    const cf = pre.cur[idx] >= 0 ? F[pre.cur[idx]] : null;
+    if (cf && cf.P) {                       // this generation's whole population
+      x.fillStyle = 'rgba(255,255,255,.9)';
+      for (const a of cf.P) { const [px, py] = P(a); x.fillRect(px - 1, py - 1, 2.5, 2.5); }
+    }
+    const b = pre.best[idx];
+    if (b >= 0) { const [px, py] = P(F[b].a); x.strokeStyle = '#3ccf8e'; x.lineWidth = 1.5; x.strokeRect(px - 3, py - 3, 6, 6); }
+  }
+  const [cx, cy] = P(manual ? shown : (TR && pre.cur[idx] >= 0 ? TR.frames[pre.cur[idx]].a : shown));
+  x.strokeStyle = '#fff'; x.lineWidth = 1;
+  x.beginPath(); x.moveTo(cx - 6, cy); x.lineTo(cx + 6, cy); x.moveTo(cx, cy - 6); x.lineTo(cx, cy + 6); x.stroke();
+}
+$('land').onclick = e => {
+  if (!landInfo) return;
+  const r = e.target.getBoundingClientRect(), L = landInfo;
+  const px = ((e.clientX - r.left) / r.width) * e.target.width, py = ((e.clientY - r.top) / r.height) * e.target.height;
+  if (!manual) setManual(true);
+  const [ji, jj] = L.joints;
+  shown[ji] = goal[ji] = Math.round(L.lo[0] + px * L.step);
+  shown[jj] = goal[jj] = Math.round(L.lo[1] + (e.target.height - 1 - py) * L.step);
+  arm.setPose(shown); updateJointRows(shown); manualReadout(); drawLandOverlay();
+};
+
+// ------------------------------------------------------------------ playback
+const speed = () => +$('speed').value;
+function play(fromStart = false) {
+  if (!TR) return;
+  if (manual) setManual(false);
+  const begin = () => { playing = true; acc = 0; $('bPlay').textContent = '❚❚ Pause'; };
+  if (atRest && TR.frames.length) {
+    // unfold from the rest pose into the run's first pose, then start the replay
+    atRest = false;
+    idx = 0;
+    execAnim = { from: shown.slice(), to: TR.frames[0].a.slice(), t: 0, dur: 1.4, then: () => { showFrame(0, true); begin(); } };
+    $('bPlay').textContent = '❚❚ Pause';
+    return;
+  }
+  if (fromStart || idx >= TR.frames.length - 1) showFrame(0, true);
+  begin();
+}
+function pause() { playing = false; if (execAnim && execAnim.then) execAnim.then = null; $('bPlay').textContent = '▶ Play'; }
+$('bPlay').onclick = () => (playing ? pause() : play());
+$('bBack').onclick = () => { pause(); showFrame(idx - 1, true); };
+$('bFwd').onclick = () => { pause(); showFrame(idx + 1, true); };
+$('bEnd').onclick = () => { pause(); showFrame(TR ? TR.frames.length - 1 : 0, true); };
+$('scrub').oninput = e => { pause(); if (manual) setManual(false); showFrame(+e.target.value, true); };
+$('showTries').onchange = () => showFrame(idx, true);
+$('bManual').onclick = () => setManual(!manual);
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === ' ') { e.preventDefault(); playing ? pause() : play(); }
+  if (e.key === 'ArrowRight') { pause(); showFrame(idx + 1, true); }
+  if (e.key === 'ArrowLeft') { pause(); showFrame(idx - 1, true); }
+});
+
+let execAnim = null;
+function moveTo(target, dur = 2.2, closeAfter = false) {
+  if (manual) setManual(false);
+  pause();
+  ghost.root.visible = false;
+  execAnim = { from: shown.slice(), to: target.slice(), t: 0, dur, closeAfter };
+  arm.grip(1);
+}
+$('bExec').onclick = () => {
+  if (!TR) return;
+  const b = TR.best || TR.frames[pre.best[TR.frames.length - 1]].a;
+  if (manual) setManual(false);
+  pause();
+  showFrame(TR.frames.length - 1, true);
+  ghost.root.visible = false;
+  const from = restPose();
+  execAnim = { from, to: b.slice(), t: 0, dur: 2.4, closeAfter: true };
+  shown = from.slice();
+  arm.grip(1);
+};
+$('bHome').onclick = () => ARM && moveTo(restPose(), 1.6);
+
+// ------------------------------------------------------------------ files & live
+$('bOpen').onclick = () => $('file').click();
+$('file').onchange = e => e.target.files[0] && readFile(e.target.files[0]);
+function readFile(file) {
+  file.text().then(t => { try { loadTrace(JSON.parse(t)); setLive(false, 'opened ' + file.name); } catch (err) { alertNarr('Could not read that file: ' + err.message); } });
+}
+function alertNarr(s) { $('narr').innerHTML = `<span style="color:var(--bad)">${esc(s)}</span>`; }
+addEventListener('dragover', e => { e.preventDefault(); $('drop').style.display = 'flex'; });
+addEventListener('dragleave', e => { if (e.target === document.documentElement || e.clientX <= 0) $('drop').style.display = 'none'; });
+addEventListener('drop', e => { e.preventDefault(); $('drop').style.display = 'none'; const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+function setLive(on, text) {
+  $('live').classList.toggle('live', on);
+  $('live').querySelector('span').textContent = text;
+}
+let lastStamp = null, booted = false, serving = location.protocol.startsWith('http');
+async function poll() {
+  if (!serving) return;
+  try {
+    const h = await fetch('../traces/latest.json', { method: 'HEAD', cache: 'no-store' });
+    if (!h.ok) { setLive(true, 'waiting for a run'); return; }
+    const stamp = (h.headers.get('Last-Modified') || '') + '|' + (h.headers.get('Content-Length') || '');
+    if (stamp === lastStamp) return;
+    lastStamp = stamp;
+    const r = await fetch('../traces/latest.json', { cache: 'no-store' });
+    const tr = await r.json();
+    // the run already saved when the page opens loads paused; only runs saved after that auto-play
+    if (!TR || tr.id !== TR.id) loadTrace(tr, booted && $('autoplay').checked);
+    setLive(true, 'watching runs');
+  } catch (e) { setLive(false, 'server stopped'); }
+}
+async function boot() {
+  if (serving) {
+    try { const r = await fetch('../armlab/arm.json', { cache: 'no-store' }); const a = await r.json(); LIVE_HOME = a.home || null; installArm(a); } catch (e) {}
+    await poll();
+    booted = true;
+    setInterval(poll, 1000);
+  } else {
+    setLive(false, 'file mode');
+    $('hint').innerHTML = 'Opened as a file, so it can\'t watch for runs.<br>Use <code>python3 -m viewer</code>, or drop a trace .json here.';
+  }
+}
+
+// ------------------------------------------------------------------ loop
+const clock = new THREE.Clock();
+const ease = t => t * t * (3 - 2 * t);
+function frame() {
+  const dt = Math.min(0.1, clock.getDelta());
+  if (playing && TR) {
+    acc += dt * speed();
+    const n = Math.floor(acc);
+    if (n > 0) {
+      acc -= n;
+      const next = idx + n;
+      if (next >= TR.frames.length - 1) { showFrame(TR.frames.length - 1, true); pause(); }
+      else showFrame(next);
+    }
+  }
+  if (arm) {
+    if (execAnim) {
+      execAnim.t += dt / execAnim.dur;
+      const t = ease(Math.min(1, execAnim.t));
+      shown = execAnim.from.map((v, i) => v + (execAnim.to[i] - v) * t);
+      if (execAnim.t >= 1) { const done = execAnim; if (done.closeAfter) arm.grip(0.15); execAnim = null; goal = shown.slice(); if (done.then) done.then(); }
+      updateJointRows(shown);
+    } else if (tween) {
+      tween.t += dt / tween.dur;
+      const t = ease(Math.min(1, tween.t));
+      shown = tween.from.map((v, i) => v + (tween.to[i] - v) * t);
+      if (tween.t >= 1) tween = null;
+    } else if (!manual) shown = goal.slice();
+    arm.setPose(shown);
+    checkAgreement();
+  }
+  if (targetRing) { targetRing.rotation.y += dt * 1.5; targetRing.rotation.x = Math.PI / 2 + Math.sin(performance.now() / 600) * 0.3; }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+// does Python's forward kinematics agree with the 3D scene graph?
+const tmpV = new THREE.Vector3();
+let lastCheck = -1;
+function checkAgreement() {
+  if (!TR || tween || execAnim || manual) return;
+  // check whichever recorded frame the solid arm is showing right now
+  const same = k => k >= 0 && TR.frames[k].a.every((v, i) => Math.abs(v - shown[i]) < 1e-6);
+  const c = [pre.cur[idx], pre.best[idx]].find(same);
+  if (c === undefined || c === lastCheck) return;
+  lastCheck = c;
+  arm.root.updateMatrixWorld(true);
+  arm.tcp.getWorldPosition(tmpV);
+  const p = TR.frames[c].p, err = Math.hypot(tmpV.x - p[0], tmpV.y - p[1], tmpV.z - p[2]) * 1000;
+  const el = $('check');
+  el.className = 'sub ' + (err < 1 ? 'ok' : 'bad');
+  el.textContent = err < 1 ? `✓ Python and the 3D arm agree on the tool tip (${err.toFixed(2)} mm)` : `✗ Python and the 3D arm disagree by ${err.toFixed(1)} mm — is arm.json the same file?`;
+}
+
+resize();
+boot();
+frame();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "Six-axis arm",
+  "units": "metres and degrees",
+  "note": "One source of truth. lab/kinematics.py and viewer/index.html both read this file, so Python and the 3D view always agree on where the gripper is. Each joint sits at `offset` from the previous joint (in that joint's frame) and turns about `axis`. With every angle at 0 the arm points straight forward along +x. `home` is the folded rest pose.",
+  "joints": [
+    { "name": "A1", "label": "base",          "axis": "y", "offset": [0.0, 0.0, 0.0], "min": -170, "max": 170 },
+    { "name": "A2", "label": "shoulder",      "axis": "z", "offset": [0.0, 0.6, 0.0], "min": -90,  "max": 180 },
+    { "name": "A3", "label": "elbow",         "axis": "z", "offset": [1.0, 0.0, 0.0], "min": -150, "max": 150 },
+    { "name": "A4", "label": "forearm twist", "axis": "x", "offset": [0.35, 0.0, 0.0], "min": -180, "max": 180 },
+    { "name": "A5", "label": "wrist",         "axis": "z", "offset": [0.40, 0.0, 0.0], "min": -120, "max": 120 },
+    { "name": "A6", "label": "flange",        "axis": "x", "offset": [0.15, 0.0, 0.0], "min": -180, "max": 180 }
+  ],
+  "tool": [0.10, 0.0, 0.0],
+  "home": [0, 100, -145, 0, -80, 0]
+}
