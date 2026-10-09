@@ -137,7 +137,7 @@ Then pick a lab:
 | [Recorded runs for lab 01](labs/01-reach-search/examples/README.md) | Nine saved runs of a finished lab 01 that you can watch before you start. | nothing |
 | **[02 · Genetic algorithm](labs/02-genetic-algorithm/README.md)** | Evolve poses: binary chromosomes, roulette selection, crossover, mutation, elitism. The viewer draws the whole population at once. Eight steps, plus experiments that compare it against lab 01. | `ga.py` |
 
-**Coming next**, in the same order as the course: evolution strategies, particle swarms, ant-colony path planning, a neural network that learns to reach, and a fuzzy controller. Each comes with its textbook reading; see the **[roadmap](docs/ROADMAP.md)**.
+**Coming next**, in the same order as the course: evolution strategies, particle swarms, ant colonies for task ordering and safe paths, a neural network that learns to reach, and a fuzzy controller. Each comes with its textbook reading; see the **[roadmap](docs/ROADMAP.md)**.
 
 **Every lab starts with a "Read first" table** listing the textbook sections and pages to review before you begin.
 

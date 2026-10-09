@@ -16,15 +16,32 @@ The labs follow the order of the CSCI 558 course modules, so each one can be use
 | 02 · Genetic algorithm | ✅ ready | Module 2 · topic 4, GA |
 | 03 · Evolution strategies | next | Module 2 · topic 6, ES |
 | 04 · Particle swarm | planned | Module 2 · topic 8, PSO |
-| 05 · Ant colony path planning | planned | Swarm intelligence (Ant System paper) |
+| 05 · Ant colony: task order and safe paths | planned | Swarm intelligence (Ant System paper) |
 | 06 · A neural network learns to reach | planned | Module 3 · topics 10–12, ANN |
 | 07 · Fuzzy controller | planned | Module 4 · topic 15, fuzzy logic |
+| 08 · A real robot model (URDF) | idea | Ties the labs to ROS 2 / industry tools |
 
 Labs 02–04 all need one viewer feature, **showing a whole population in each frame**. It was built with lab 02 (`Trace.generation`), so 03 and 04 get it for free.
 
+### What "ready" means for a lab
+
+A lab is ready to hand to students when it has all of these:
+
+- [ ] `README.md` with a **Read first** table, then numbered steps: by hand → write → check → see it
+- [ ] a stub file (every function `raise NotImplementedError`) and a test file, run as `python3 test_x.py N`
+- [ ] `run.py` with `--runs N` for success rates over seeds 0..N-1, recording through `viewer.trace.Trace(..., lab="NN-name")`
+- [ ] `levels.py` (or shared levels), with start poses that don't collide
+- [ ] a Part E experiments table, with measured results behind a fold
+- [ ] `examples/`: recorded runs of a finished version (traces only) plus a "what to look for" README
+- [ ] a reference solution in the private instructor kit, passing every test
+- [ ] a row in the main README's Labs table, and its status updated here
+
 ---
 
-## 02 · Genetic algorithm
+## 02 · Genetic algorithm ✅
+
+[Ready](../labs/02-genetic-algorithm/README.md). The plan it was built from:
+
 
 **Students build:**
 - a population of arm poses, each encoded as a bit string (8 bits per motor, so 48 bits for six motors);
@@ -67,6 +84,8 @@ Labs 02–04 all need one viewer feature, **showing a whole population in each f
 - fixed vs. self-adapted σ;
 - ES vs. GA on the six-motor level, where real numbers suit the problem better than bits.
 
+**Industry tie:** evolution strategies (especially CMA-ES) are a standard tool for tuning robot controllers and searching for robot policies, and OpenAI (2017) showed ES can stand in for reinforcement learning on some control tasks. This is the most "industry" lab on the list.
+
 | Read first | Pages |
 |---|---|
 | FNC 3.6.1 Evolution strategies | 100–103 |
@@ -88,24 +107,33 @@ Labs 02–04 all need one viewer feature, **showing a whole population in each f
 - global vs. ring (local) neighbourhoods;
 - swarm size vs. number of iterations for a fixed evaluation budget.
 
+**Industry tie:** particle swarms are widely used to tune controller gains, where each particle is one set of gains. A stretch step can tune a simple joint controller instead of a pose.
+
 | Read first | Pages |
 |---|---|
 | FNC 5.4 Social adaptation of knowledge: 5.4.1 Particle swarm through 5.4.5 Summary | 246–256 |
 | CI Ch. 3 "Particle Swarm Optimization" | 87–92 |
 | CI Ch. 4 "Particle Swarm Optimization Implementation" | 118–142 |
 
-## 05 · Ant colony path planning
+## 05 · Ant colony: task order and safe paths
 
-**The problem:** a search finds the final pose, but the replay can still pass *through* the post on the way there. This lab plans a **collision-free path** from the rest pose to the target.
+Two parts, both real industrial problems:
+
+**Part A · Task order (the main lab).** The arm must visit 10 weld points (or pick 10 parts). In what order? It's the travelling salesman problem, exactly what the Ant System paper solves, with "distance" being how far the motors have to turn between poses.
+
+**Part B · A safe path.** A search finds the final pose, but the replay can still pass *through* the post on the way there. Plan a **collision-free path** from the rest pose to the target through a graph of safe waypoint poses.
 
 **Students build:**
-- a graph of safe waypoint poses;
-- ants that walk it, laying pheromone and evaporating it;
-- a comparison with Dijkstra's shortest path.
+- the tour-length (or path-cost) function;
+- ants that build tours, lay pheromone and let it evaporate;
+- a comparison with a greedy nearest-neighbour tour (Part A) and Dijkstra's shortest path (Part B).
 
 **They'll see:**
+- the arm touching each point in the chosen order;
 - edges coloured by pheromone strength;
-- the arm actually moving along the chosen path, around the post.
+- the arm moving along a path around the post.
+
+**Viewer work needed:** draw tour and graph edges, coloured by a value (new frame fields), and several targets at once.
 
 **Experiments:**
 - evaporation rate;
@@ -153,10 +181,22 @@ Labs 02–04 all need one viewer feature, **showing a whole population in each f
 - a fuzzy controller vs. a simple proportional controller;
 - (stretch) tuning the rules with lab 02's GA, as in CI Ch. 8.
 
+**Industry tie:** fuzzy control is used in appliances, cameras and process control. It turns an expert's rules of thumb into a controller without a mathematical model.
+
 | Read first | Pages |
 |---|---|
 | CI Ch. 7 Fuzzy systems concepts and paradigms, especially "Developing a Fuzzy Controller" | 269–314 (controller: 301–313) |
 | CI Ch. 8 "Evolving Fuzzy Rule Systems" (stretch) | 353–371 |
+
+## 08 · A real robot model (URDF) · idea
+
+**Why:** the labs use a made-up arm defined in `armlab/arm.json`. Real robots are described in **URDF**, the robot-description format ROS 2 and MoveIt use. Loading a real arm's URDF would let students run their lab 01–04 solvers on a real robot's geometry and joint limits, and compare against a standard inverse-kinematics solver such as KDL.
+
+**Needs:** a URDF reader in `armlab/` that produces the same joint list as `arm.json` (offsets, axes, limits), and the viewer drawing the robot's meshes (the `urdf-loader` library for three.js). Check the model's licence before bundling it.
+
+| Read first | Pages |
+|---|---|
+| ROS 2 / MoveIt documentation on URDF and kinematics plugins | online |
 
 ---
 

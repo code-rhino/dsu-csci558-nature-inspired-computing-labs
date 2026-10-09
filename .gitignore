@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .DS_Store
 labs/00-start-here/my_first_search.py
+SESSION-NOTES.md
