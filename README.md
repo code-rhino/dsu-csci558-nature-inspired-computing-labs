@@ -74,6 +74,31 @@ And one you'll see for yourself: the arm sometimes reaches **backwards over its 
 
 ---
 
+## How this relates to industry
+
+**What's realistic here:**
+- **Simulate first.** Real robot programs are built and tested on a simulated arm before they run on the real one, with tools like ABB RobotStudio, RoboDK and Siemens Process Simulate, or Gazebo and NVIDIA Isaac Sim in research and ROS. This viewer is a much simpler version of the same idea.
+- **Score it, search, watch, and repeat over many seeds.** That's how engineers compare and tune algorithms. One run of a random method proves nothing, in industry as much as in class.
+- **Random restarts.** They're used in real solvers, not just in class. TRAC-IK, a popular inverse-kinematics solver for ROS, restarts from random poses when it gets stuck: the same trick as iterated hill-climbing in lab 01.
+- **"Find the pose" and "find a safe path to it" are separate problems.** That's why an arm in the replay can appear to pass through the post (lab 01 explains this). Real systems solve the second problem with *motion planning*.
+
+**What's simplified:** for a standard six-motor factory arm, nobody uses a genetic algorithm just to reach a point. Most industrial arms are built so their angles can be calculated exactly with trigonometry, like lab 01's two-motor answer key, in a few microseconds. The usual fallback follows the slope, like lab 00's bonus step. We use reaching because it's easy to *see*, not because it's how factories do it.
+
+**Where nature-inspired methods are really used:**
+
+| Problem | Method | Example |
+|---|---|---|
+| Reaching with extra goals: keep the gripper level, avoid obstacles, stay away from joint limits | Evolutionary methods mixed with slope-following | **bio_ik**, an inverse-kinematics solver for the ROS motion-planning framework MoveIt, built around an evolutionary algorithm |
+| Smooth, collision-free motions | Stochastic optimisation | **STOMP** improves a path by trying randomly wiggled versions of it, close in spirit to stochastic hill-climbing (lab 01) |
+| The order of tasks (which weld or pick comes next) | Genetic algorithms, simulated annealing, ant colonies | Essentially the travelling salesman problem: what the Ant System paper (lab 05) solves |
+| Where to place the robot and parts in a work cell | Genetic algorithms, simulated annealing | Minimise reaching distance and cycle time |
+| Tuning controllers | Genetic algorithms, particle swarms (lab 04), evolution strategies | Tuning a motor's controller gains or the parameters of a walking gait |
+| *Training* a robot's behaviour | Mostly reinforcement learning in simulation; also evolution strategies (lab 03) | Learning to grasp or walk in simulation, then moving it to the real robot. In 2017 OpenAI showed evolution strategies can match reinforcement learning on some of these tasks. |
+
+**One distinction to keep:** these labs *search* for one answer at a time. Each new target is a new search. *Training* means learning something that works for every target at once. Lab 06, where a neural network learns to reach, is the first step from searching toward training.
+
+---
+
 ## Words you'll see
 
 | Word | Meaning |
