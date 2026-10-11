@@ -1,87 +1,161 @@
-"""Checks for the shared code (armlab/ and viewer/trace.py), not for any lab.
+"""Checks for the shared code (farmlab/ and viewer/trace.py), not for any lab.
 
     python3 tests/test_platform.py      (or: python3 -m pytest tests)
 
-Run these after changing arm.json, kinematics, collisions or the trace format.
+Run these after changing drone.json, the farms, the energy model or the trace format.
 """
+import itertools
 import json
 import math
+import random
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from armlab.kinematics import ARM, LIMITS, N_JOINTS, points, tcp, tool_direction  # noqa: E402
-from armlab.world import Level, collides  # noqa: E402
-from viewer.trace import Trace  # noqa: E402
+import viewer.trace as trace  # noqa: E402
+from farmlab.farms import BEST_KNOWN, FARMS, get_farm  # noqa: E402
+from farmlab.flight import fly, leg_energy, plan_trips, route_score, trip_energy  # noqa: E402
+from farmlab.world import DRONE, blocked, flight_distance, inside_obstacle, path  # noqa: E402
 
 
 def close(a, b, tol=1e-9):
-    return all(abs(x - y) <= tol for x, y in zip(a, b))
+    return abs(a - b) <= tol
 
 
-def test_arm_definition():
-    assert N_JOINTS == 6 and len(LIMITS) == 6
-    for j in ARM["joints"]:
-        assert j["axis"] in "xyz" and len(j["offset"]) == 3 and j["min"] < j["max"]
+def test_drone_numbers_are_hand_friendly():
+    assert DRONE["wh_per_kg_m"] == 0.01 and DRONE["empty_mass_kg"] == 25 and DRONE["kg_per_l"] == 1
+    assert DRONE["spray_alt_m"] < DRONE["cruise_alt_m"]
 
 
-def test_zero_pose_points_forward():
-    reach = sum(j["offset"][0] for j in ARM["joints"]) + ARM["tool"][0]
-    shoulder = sum(j["offset"][1] for j in ARM["joints"])
-    assert close(tcp((0,) * 6), (reach, shoulder, 0.0))
-    assert close(tool_direction((0,) * 6), (1.0, 0.0, 0.0))
+def test_farms_are_well_formed():
+    for n, farm in FARMS.items():
+        assert farm.number == n
+        assert all(z.need_l <= farm.tank for z in farm.zones), "every zone must fit in one tank"
+        assert not inside_obstacle(farm.base, farm), f"farm {n}: the base is inside an obstacle"
+        for z in farm.zones:
+            assert not inside_obstacle((z.x, z.y), farm), f"farm {n}: {z.name} is inside an obstacle"
+            assert trip_energy([farm.zones.index(z)], farm) <= farm.battery, f"farm {n}: {z.name} is out of battery range"
+    assert sum(z.need_l for z in get_farm(1).zones) == get_farm(1).tank, "farm 1 is exactly one tank"
 
 
-def test_base_turns_about_vertical():
-    x, y, z = tcp((90, 0, 0, 0, 0, 0))
-    assert abs(x) < 1e-9 and z < -1.9, "A1 = +90 swings the arm from +x to -z (right-hand rule about +y)"
+def test_one_leg_by_hand():
+    farm = get_farm(1)
+    z7 = farm.zones[6]
+    assert (z7.x - farm.base[0], z7.y - farm.base[1]) == (125.0, 0.0), "Z7 is 125 m due east of the base"
+    assert close(leg_energy(-1, 6, 45.0, farm), 0.01 * 45 * 125)
 
 
-def test_wrist_twist_does_not_move_tip():
-    a, b = tcp((10, 20, 30, 0, 0, 0)), tcp((10, 20, 30, 77, 0, 0))
-    assert close(a, b), "A4 turns about the forearm's own axis"
+def test_route_energy_by_hand():
+    farm = get_farm(1)
+    route = list(range(8))
+    load, here, wh = 20.0, farm.base, 0.0
+    for z in route:
+        p = (farm.zones[z].x, farm.zones[z].y)
+        wh += 0.01 * (25 + load) * math.dist(here, p)
+        load -= farm.zones[z].need_l
+        here = p
+    wh += 0.01 * 25 * math.dist(here, farm.base)
+    assert close(route_score(route, farm), wh, 1e-9)
 
 
-def test_points_chain():
-    pts = points((0, 45, -30, 0, 0, 0))
-    assert len(pts) == N_JOINTS + 1 and close(pts[-1], tcp((0, 45, -30, 0, 0, 0)))
+def test_weight_makes_direction_matter():
+    farm = get_farm(1)
+    r = [7, 4, 2, 0, 6, 3, 5, 1]
+    assert close(fly(r, farm).distance_m, fly(r[::-1], farm).distance_m, 1e-9), "same loop, same metres"
+    assert route_score(r, farm) < route_score(r[::-1], farm) - 20, "...but not the same energy"
 
 
-def test_collisions():
-    lv = Level(0, "t", free=(1, 2), start=(0,) * 6, target=(1, 1, 0), floor=True,
-               boxes=(((0.5, 0.0, -0.25), (0.8, 1.1, 0.25)),))
-    assert collides((0, 0, 0, 0, 0, 0), lv), "horizontal arm passes through the post"
-    assert not collides((0, 90, -90, 0, 0, 0), lv)
-    assert collides((0, -60, 0, 0, 0, 0), lv), "pointing down goes through the floor"
+def test_fast_score_matches_full_flight():
+    rng = random.Random(0)
+    for farm in FARMS.values():
+        for _ in range(30):
+            r = list(range(len(farm.zones)))
+            rng.shuffle(r)
+            f = fly(r, farm)
+            assert close(route_score(r, farm), f.score, 1e-6)
+            assert close(sum(leg["wh"] for leg in f.legs), f.energy_wh, 1e-6)
+            assert [z for t in f.trips for z in t] == r, "trips keep the route's order"
 
 
-def test_trace_round_trip(tmp=None):
-    lv = Level(0, "t", free=(1, 2), start=(0,) * 6, target=(1.0, 1.6, 0.0))
-    rec = Trace(lv, "test", lab="_platform_test")
-    rec.restart((0,) * 6, 1.0)
-    rec.tried((0, 10, 0, 0, 0, 0), 0.9, accepted=True, T=0.5)
-    path = rec.save("roundtrip")
-    data = json.loads(Path(path).read_text())
-    assert data["lab"] == "_platform_test" and len(data["frames"]) == 2
+def test_trips_respect_tank_and_battery():
+    rng = random.Random(1)
+    for farm in (get_farm(2), get_farm(4)):
+        for _ in range(30):
+            r = list(range(len(farm.zones)))
+            rng.shuffle(r)
+            for t in plan_trips(r, farm):
+                assert sum(farm.zones[z].need_l for z in t) <= farm.tank + 1e-9
+                assert trip_energy(t, farm) <= farm.battery + 1e-9
+    assert len(plan_trips(list(range(14)), get_farm(2))) >= 3, "59 L needs at least 3 tank loads"
+
+
+def test_paths_go_round_obstacles():
+    farm = get_farm(3)
+    detours = 0
+    for i in range(-1, len(farm.zones)):
+        for j in range(-1, len(farm.zones)):
+            if i == j:
+                continue
+            p = path(i, j, farm)
+            assert all(not blocked(a, b, farm) for a, b in zip(p, p[1:])), f"path {i}->{j} cuts an obstacle"
+            straight = math.dist(farm.spot(i), farm.spot(j))
+            assert flight_distance(i, j, farm) >= straight - 1e-9
+            detours += len(p) > 2
+    assert detours > 20, "farm 3's obstacles should force plenty of detours"
+    assert all(len(path(i, j, get_farm(2))) == 2 for i in range(-1, 14) for j in range(-1, 14) if i != j), "farm 2 is open"
+
+
+def test_wind_is_one_way():
+    calm, windy = get_farm(3), get_farm(4)
+    assert close(leg_energy(-1, 7, 30, calm), leg_energy(7, -1, 30, calm), 1e-9), "no wind: there and back cost the same"
+    # the wind blows from the north-east, so flying north-east (out to Z8) is into it
+    assert leg_energy(-1, 7, 30, windy) > leg_energy(7, -1, 30, windy)
+
+
+def test_farm1_answer_key():
+    farm = get_farm(1)
+    best = min(route_score(r, farm) for r in itertools.permutations(range(8)))
+    assert round(best, 1) == BEST_KNOWN[1]
+
+
+def test_trace_round_trip():
+    farm = get_farm(3)
+    old = trace.ROOT
+    with tempfile.TemporaryDirectory() as tmp:
+        trace.ROOT = Path(tmp)               # never touch the real traces/latest.json the viewer is watching
+        try:
+            rec = trace.Trace(farm, "test", lab="_platform_test")
+            r = list(range(14))
+            rec.restart(r, route_score(r, farm))
+            rec.tried(r[::-1], route_score(r[::-1], farm), accepted=True, T=0.5)
+            rec.moved(r, route_score(r, farm))
+            out = rec.save("roundtrip")
+            data = json.loads(Path(out).read_text())
+            assert (Path(tmp) / "traces" / "latest.json").exists()
+        finally:
+            trace.ROOT = old
+    assert data["lab"] == "_platform_test" and len(data["frames"]) == 3 and data["evaluations"] == 2, \
+        "moved() re-records a route already scored, so it isn't an evaluation"
     assert data["frames"][1]["k"] == "move" and data["frames"][1]["T"] == 0.5
-    assert data["landscape"]["joints"] == [1, 2], "2-motor levels get a landscape"
-    assert close(data["frames"][0]["p"], tcp((0,) * 6), 1e-4)
-    Path(path).unlink()
-    Path(path).parent.rmdir()
+    assert data["frames"][0]["t"] == plan_trips(r, farm)
+    assert data["farm"]["best_known_wh"] == BEST_KNOWN[3] and data["farm"]["paths"], "detours go to the viewer"
+    assert close(data["best"]["energy_wh"], route_score(data["best"]["route"], farm), 1e-3)
 
 
 def test_trace_generation_frames():
-    lv = Level(0, "t", free=(1, 2), start=(0,) * 6, target=(1.0, 1.6, 0.0))
-    rec = Trace(lv, "test", lab="_platform_test")
-    rec.generation([(0, 0, 0, 0, 0, 0), (0, 0, 90, 0, 0, 0)], [1.41, 0.0], diversity=3.0)
+    farm = get_farm(1)
+    rec = trace.Trace(farm, "test", lab="_platform_test")
+    a, b = list(range(8)), [7, 4, 2, 0, 6, 3, 5, 1]
+    rec.generation([a, b], [route_score(a, farm), route_score(b, farm)], diversity=3.0)
     f = rec.frames[0]
-    assert f["k"] == "gen" and f["a"] == [0, 0, 90, 0, 0, 0] and f["s"] == 0.0, "the best member leads the frame"
-    assert len(f["P"]) == 2 and f["S"] == [1.41, 0.0] and abs(f["mean"] - 0.705) < 1e-9 and f["d"] == 3.0
+    assert f["k"] == "gen" and f["o"] == b and len(f["P"]) == 2 and len(f["PT"]) == 2 and f["d"] == 3.0
+    assert rec.evaluations == 2
 
 
 if __name__ == "__main__":
-    tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_")]
+    tests = [(n, f) for n, f in globals().items() if n.startswith("test_")]
     bad = 0
     for n, f in tests:
         try:

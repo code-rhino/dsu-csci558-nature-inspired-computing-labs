@@ -1,16 +1,15 @@
 # Lab 00 · Start here
 
-**Type along and build your first search in about 45 minutes.** You'll make the arm move, measure how far it is from a target, write a search that hunts for a good pose, and then find out honestly how good that search is. Every piece of code is on this page. Type it yourself rather than pasting; that's where the learning happens.
+**Type along and build your first search in about 45 minutes.** You'll work out what a drone flight costs, write the score for a whole spraying route, watch the drone fly it in 3D, write a search that hunts for a cheaper route, and then find out honestly how good that search is. Every piece of code is on this page. Type it yourself rather than pasting; that's where the learning happens.
 
-**What you'll end up with:** your own `my_first_search.py` (about 60 lines), a 3D replay of it searching, and a measured result that explains why the rest of the labs exist.
+**What you'll end up with:** your own `my_first_search.py` (about 60 lines), a 3D replay of the drone spraying the field, and a measured result that explains why the rest of the labs exist.
 
 ## Read first
 
 | Book | Section | Pages | Why |
 |---|---|---|---|
 | FNC (de Castro) | 3.1 Introduction, 3.2 Problem solving as a search task | 61–65 | The three ingredients of every search: representation, objective, evaluation. You'll write all three today. |
-| CI (Eberhart & Shi) | Ch. 3, "Evolutionary Computation Overview" and "EC Paradigm Attributes" | 47–51 | Why these methods use a score directly instead of calculus. |
-| FNC, for the bonus step | 4.4.3 ADALINE, the LMS algorithm, and error surfaces | 160–163 | Gradient descent on an error surface: the idea behind "follow the slope". |
+| CI (Eberhart & Shi) | Ch. 3, "Evolutionary Computation Overview" and "EC Paradigm Attributes" | 47–51 | Why these methods only need a score, not a formula for the answer. |
 
 ## Before you start
 
@@ -20,7 +19,7 @@ From the repo root, start the viewer and leave it running in its own terminal wi
 python3 -m viewer
 ```
 
-Your browser opens with the arm folded at rest. Everything below runs in a **second** terminal, from the repo root.
+Your browser opens on the farm. Everything below runs in a **second** terminal, from the repo root.
 
 ---
 
@@ -33,123 +32,154 @@ import math
 import random
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # lets Python find armlab/ and viewer/
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # lets Python find farmlab/ and viewer/
 
-from armlab.kinematics import FOLDED, LIMITS, tcp
-from armlab.world import Level, collides
+from farmlab.farms import get_farm
+from farmlab.flight import route_score
 from viewer.trace import Trace
+
+farm = get_farm(1)
 ```
 
 The `sys.path` line tells Python to look two folders up, at the repo root, for the shared code. Run it: `python3 labs/00-start-here/my_first_search.py`. **No output is good.** An `ImportError` means the file isn't in `labs/00-start-here/`.
 
-## Step 2 · Where is the gripper? (5 min)
+## Step 2 · Meet the farm (5 min)
 
-A **pose** is six motor angles in degrees: `(base, shoulder, elbow, twist, wrist, flange)`. `tcp(pose)` tells you where the gripper ends up, as `(x, y, z)` in metres: x forward, y up, z sideways.
+Farm 1 is a 160 m × 100 m corn field. A soil test found **8 zones** that need fertiliser. The base station, where the drone takes off and refills, is just off the west edge at (−15, 50). Coordinates are metres: x is east, y is north.
 
-**Predict first** (the upper arm is 1 m, the forearm plus gripper is 1 m, and the shoulder is 0.6 m off the floor):
-
-| Pose | Your guess for (x, y, z) |
-|---|---|
-| `(0, 0, 0, 0, 0, 0)`, everything at zero | |
-| `(0, 90, 0, 0, 0, 0)`, shoulder raised 90° | |
-| `(90, 0, 0, 0, 0, 0)`, base turned 90° | |
-
-Then add this to the bottom of your file and run it:
+Add this to the bottom of your file and run it:
 
 ```python
-print(tcp((0, 0, 0, 0, 0, 0)))
-print(tcp((0, 90, 0, 0, 0, 0)))
-print(tcp((90, 0, 0, 0, 0, 0)))
+for k, z in enumerate(farm.zones):
+    print(k, z.name, (z.x, z.y), z.need_l, "L")
 ```
 
 <details><summary>What you should see</summary>
 
 ```
-(2.0, 0.6, 0.0)                 arm straight out, 2 m forward at shoulder height
-(1.22e-16, 2.6, 0.0)            straight up; 1.22e-16 is just 0 with rounding noise
-(1.22e-16, 0.6, -2.0)           swung round to the side
+0 Z1 (130.0, 90.0) 5.0 L
+1 Z2 (30.0, 30.0) 1.0 L
+2 Z3 (70.0, 70.0) 3.0 L
+3 Z4 (150.0, 10.0) 2.0 L
+4 Z5 (50.0, 90.0) 4.0 L
+5 Z6 (90.0, 30.0) 1.0 L
+6 Z7 (110.0, 50.0) 2.0 L
+7 Z8 (30.0, 70.0) 2.0 L
 ```
 </details>
 
-That's **forward kinematics**: angles in, position out. It's easy. The hard direction, position in and angles out, is what we're going to *search* for. Delete the three `print` lines before going on.
+The zones need 20 L between them, exactly one full tank, so the drone sprays them all in **one trip**. The only decision is the **order**. A route is written as a list of zone numbers, such as `[0, 1, 2, 3, 4, 5, 6, 7]` (Z1, then Z2, then Z3...).
 
-## Step 3 · Make it move (10 min)
+**Predict:** how many different orders are there for 8 zones? Delete the `for` loop before going on.
 
-The viewer replays a **trace**: a list of poses you record in Python. Add a task (a **Level**) and a helper that glides from one pose to another:
+<details><summary>Answer</summary>
+
+8! = 8 × 7 × 6 × … × 1 = **40,320**.
+</details>
+
+## Step 3 · What one leg costs (8 min)
+
+The drone's energy model (from `farmlab/drone.json`) is deliberately simple:
+
+> **energy (Wh) = 0.01 × mass on board (kg) × metres flown**
+
+The drone weighs **25 kg** with an empty tank, and a litre of fertiliser weighs **1 kg**.
+
+**By hand:** Z7 is at (110, 50) and the base at (−15, 50), so it's exactly 125 m due east.
+1. What does the flight out to Z7 cost **with a full 20 L tank**?
+2. What does the flight back cost **with an empty tank**?
+
+<details><summary>Check</summary>
+
+1. 0.01 × (25 + 20) × 125 = **56.25 Wh**.
+2. 0.01 × 25 × 125 = **31.25 Wh**. A full tank makes every metre cost 80% more.
+</details>
+
+Now write it. Add this above the bottom of your file:
 
 ```python
-level = Level(1, "My first target", free=(0, 1, 2), start=FOLDED, target=(1.2, 1.0, 0.5), floor=True,
-              blurb="Base, shoulder and elbow move. Reach the yellow ball without going through the floor.")
+EMPTY_KG = 25.0          # the drone with its battery and an empty tank
+WH_PER_KG_M = 0.01       # energy to carry 1 kg for 1 m
 
 
-def glide(rec, a, b, steps=30):
-    """Record `steps` poses on a straight line from pose a to pose b."""
-    for i in range(1, steps + 1):
-        t = i / steps
-        pose = tuple(x + (y - x) * t for x, y in zip(a, b))
-        rec.moved(pose, 0)          # 0 = no score yet; step 4 fixes that
+def leg_energy(a, b, mass_kg):
+    """Wh to fly in a straight line from point a to point b carrying mass_kg in total."""
+    return WH_PER_KG_M * mass_kg * math.dist(a, b)
+```
 
+Check your hand answer: `print(leg_energy(farm.base, (110, 50), 45))` should print `56.25`.
 
+## Step 4 · Score a whole route (10 min)
+
+This is the **evaluation function** from FNC 3.2. The drone loads all 20 L, flies to each zone in turn, sprays it (and gets lighter), then flies home:
+
+```python
+def route_energy(route):
+    """Wh to take off with all the fertiliser, spray the zones in `route` order, and fly home."""
+    load = sum(farm.zones[z].need_l for z in route)       # litres, and 1 L weighs 1 kg
+    here = farm.base
+    total = 0.0
+    for z in route:
+        zone = farm.zones[z]
+        total += leg_energy(here, (zone.x, zone.y), EMPTY_KG + load)
+        load -= zone.need_l
+        here = (zone.x, zone.y)
+    total += leg_energy(here, farm.base, EMPTY_KG + load)
+    return total
+```
+
+Now check yours against the shared code. `farmlab` has its own `route_score(route, farm)`, which also handles refill trips, obstacles and wind for the bigger farms. On farm 1 they must agree:
+
+```python
+r = [0, 1, 2, 3, 4, 5, 6, 7]
+print(route_energy(r), route_score(r, farm))
+print(route_energy(r[::-1]))
+```
+
+You should see **280.3 Wh** twice, then **268.3 Wh** for the same zones in reverse order. **Same distance, different energy.** That's the weight of the fertiliser: the order decides how far each litre gets carried before it's sprayed.
+
+## Step 5 · Make it fly (5 min)
+
+The viewer replays a **trace**: a record of the routes you scored. Replace your `print` lines with:
+
+```python
 if __name__ == "__main__":
-    rec = Trace(level, "hello arm", lab="00-start-here")
-    rec.restart(FOLDED, 0)
-    glide(rec, FOLDED, (0, 0, 0, 0, 0, 0))
-    glide(rec, (0, 0, 0, 0, 0, 0), (0, 90, 0, 0, 0, 0))
-    glide(rec, (0, 90, 0, 0, 0, 0), (90, 90, -90, 0, 0, 0))
-    rec.save()
+    route = [0, 1, 2, 3, 4, 5, 6, 7]
+    rec = Trace(farm, "my first route", lab="00-start-here")
+    rec.restart(route, route_energy(route))
+    rec.save(best=route)
 ```
 
-What the pieces mean:
-- **`free=(0, 1, 2)`:** only the base, shoulder and elbow are allowed to move.
-- **`start=FOLDED`:** begin from the folded rest pose.
-- **`target`:** where the yellow ball is.
-- **`floor=True`:** going through the floor counts as a collision.
+Run it. The viewer picks it up by itself: the route appears as coloured lines, then the drone takes off, flies to each zone, drops down and sprays, and comes home. Watch the **battery** and **tank** gauges. The yellow corn turns green as it's sprayed: it's short of nitrogen until then.
 
-Run it. The viewer picks it up by itself: the arm unfolds, straightens out, points up, then turns and bends. Try the **Side** and **Top** cameras, and drag to orbit.
+![Farm 1 in the viewer: the base on the left, eight zones, one trip](../../docs/screenshots/farm1.jpg)
 
-**Try:** add a fourth `glide` that brings the arm back to `FOLDED`.
+*Farm 1 in the viewer, showing the best route of all (you'll find it in the bonus step). Pale yellow zones still need fertiliser.*
 
-## Step 4 · Score a pose (5 min)
+**Try:** change `route` to one you think is cheaper and run it again. Can you beat 268.3 Wh by hand? Use the **Top** camera to plan.
 
-To search, you need a number that says how good a pose is: the **evaluation function** from FNC 3.2. Ours is the distance from the gripper to the target, with a big penalty for hitting the floor. Add it above `glide`:
+## Step 6 · Your first search: random guessing (10 min)
+
+The simplest possible search: try lots of random orders and keep the cheapest. Add these two functions:
 
 ```python
-def score(pose):
-    """How far the gripper is from the target, in metres. Hitting the floor costs 10 extra."""
-    d = math.dist(tcp(pose), level.target)
-    if collides(pose, level):
-        d += 10
-    return d
-```
-
-Now change the `0` inside `glide` to `score(pose)` so the replay shows real scores. Check one by hand by adding `print(score(FOLDED))` at the top of the `__main__` block. You should get **0.842**: the folded arm's gripper is 84.2 cm from the ball.
-
-**Check it in the viewer:** press **Manual jog** and drag the sliders. The panel shows the distance to the target live. Can you get under 10 cm by hand?
-
-## Step 5 · Your first search: random guessing (10 min)
-
-The simplest possible search: try lots of random poses and keep the best. Add these two functions:
-
-```python
-def random_pose(rng):
-    pose = list(level.start)
-    for j in level.free:
-        lo, hi = LIMITS[j]
-        pose[j] = rng.randint(lo, hi)
-    return tuple(pose)
+def random_route(rng):
+    route = list(range(len(farm.zones)))
+    rng.shuffle(route)
+    return route
 
 
 def random_search(tries, rng, rec):
-    best = level.start
-    best_score = score(best)
+    best = list(range(len(farm.zones)))
+    best_score = route_energy(best)
     rec.restart(best, best_score)
     for _ in range(tries):
-        pose = random_pose(rng)
-        s = score(pose)
+        route = random_route(rng)
+        s = route_energy(route)
         better = s < best_score
-        rec.tried(pose, s, accepted=better)     # the viewer moves the arm only when better
+        rec.tried(route, s, accepted=better)     # the viewer only changes the route when it's better
         if better:
-            best, best_score = pose, s
+            best, best_score = route, s
     return best, best_score
 ```
 
@@ -157,10 +187,10 @@ And replace your whole `__main__` block with:
 
 ```python
 if __name__ == "__main__":
-    rec = Trace(level, "random search", lab="00-start-here")
+    rec = Trace(farm, "random search", lab="00-start-here")
     best, s = random_search(2000, random.Random(0), rec)
-    print("best pose:", best)
-    print(f"distance: {s * 100:.1f} cm")
+    print("best route:", best)
+    print(f"energy: {s:.1f} Wh")
     rec.save()
 ```
 
@@ -169,18 +199,19 @@ if __name__ == "__main__":
 Run it, then watch the replay:
 
 ```
-best pose: (-21, -29, 78, 0, 0, 0)
-distance: 26.8 cm
+best route: [7, 4, 0, 6, 3, 2, 5, 1]
+energy: 168.8 Wh
 ```
 
 **What to watch:**
-- The blue ghost arm flails around, one random guess at a time.
-- The orange arm only moves when a guess beats the best so far.
-- In the score chart, the green "best" line drops quickly at first, then hardly at all.
+- The blue dashed route flickers around, one random guess at a time.
+- The coloured route only changes when a guess beats the best so far.
+- In the energy chart, the green "best" line drops quickly at first, then hardly at all.
+- At the end the drone flies the best route it found.
 
-## Step 6 · How good is it, really? (5 min)
+## Step 7 · How good is it, really? (5 min)
 
-One run proves nothing: maybe seed 0 was unlucky. Scientists run many trials. Add this and call `test20()` instead of the search, by temporarily replacing the `__main__` block's contents with `test20()`:
+One run proves nothing: maybe seed 0 was unlucky. Scientists run many trials. The best possible route for farm 1 uses **143.4 Wh** (the bonus step proves it). Add this, and call `test20()` instead of the search by temporarily replacing the `__main__` block's contents with `test20()`:
 
 ```python
 class NoRecord:
@@ -189,33 +220,42 @@ class NoRecord:
     def tried(self, *a, **k): pass
 
 
+BEST_KNOWN = 143.4
+
+
 def test20(tries=2000):
     wins = 0
     for seed in range(20):
         best, s = random_search(tries, random.Random(seed), NoRecord())
-        print(f"seed {seed:2}: {s * 100:5.1f} cm")
-        wins += s < 0.05
-    print(f"within 5 cm: {wins} of 20")
+        print(f"seed {seed:2}: {s:6.1f} Wh  ({100 * (s / BEST_KNOWN - 1):4.1f}% above the best)")
+        wins += s <= BEST_KNOWN * 1.01
+    print(f"within 1% of the best: {wins} of 20")
 ```
 
-**The result:** within 5 cm in **0 of 20** runs. Even with 20,000 guesses per run, it's only 1 of 20.
+**The result:** within 1% of the best in **0 of 20** runs. With 20,000 guesses per run it's 11 of 20, but that's half of all 40,320 orders.
 
-**Why?** Three motors with whole-degree settings give 341 × 271 × 301 ≈ 28 million poses. Only a tiny patch of them puts the gripper within 5 cm of the ball. Random guessing doesn't **learn** anything from its previous guesses. Every method in Chapter 3 is a way of using what you've already found to make a better next guess.
+**Why?** Exactly **one** order out of 40,320 is within 1% of the best. Random guessing doesn't **learn** anything from its previous guesses. Every method in Chapter 3 is a way of using what you've already found to make a better next guess.
 
-## Bonus · Follow the slope (10 min)
+## Bonus · Rules of thumb, and the answer key (10 min)
 
-Here's one way to learn from previous guesses: measure which direction is downhill and step that way. That's **gradient descent**. It isn't one of the Chapter 3 methods, because it needs the *slope* of the landscape and not just the score, but it's a good contrast.
-
-The finished version is in `finished/follow_the_slope.py`. Read its `slope()` and `gradient_descent()` functions (about 30 lines), then run it:
+People planning a route by hand use rules of thumb. Are they any good? `finished/rules_of_thumb.py` tries three, then checks every one of the 40,320 orders:
 
 ```bash
-python3 labs/00-start-here/finished/follow_the_slope.py 1     # your target: 0.1 cm in 148 evaluations
-python3 labs/00-start-here/finished/follow_the_slope.py 2     # a post in the way: stuck 80 cm short
-python3 labs/00-start-here/finished/follow_the_slope.py 2 --restarts 5 --seed 3     # restarts get around it
-python3 labs/00-start-here/finished/follow_the_slope.py 3     # six motors, gripper pointing down
+python3 labs/00-start-here/finished/rules_of_thumb.py
 ```
 
-Compare: **2,000 random guesses got to 26.8 cm, while 148 slope-guided steps got to 0.1 cm.** But on level 2 the slope points straight into the post and the arm gets stuck there. Being stuck on a "best nearby" answer is called a **local optimum**, and escaping it is what lab 01 is about.
+| Route | Energy | Distance |
+|---|---|---|
+| zones in name order | 280.3 Wh | 784 m |
+| **heaviest first**: get light quickly | 237.4 Wh | 705 m |
+| **nearest first**: always the closest zone next | 166.7 Wh | 516 m |
+| **shortest loop**: fewest metres of all 40,320 | 166.6 Wh | 443 m |
+| the shortest loop, **flown the other way round** | **143.4 Wh** | 443 m |
+| **brute force**: the cheapest of all 40,320 | **143.4 Wh** | 443 m |
+
+Two lessons:
+1. **Weight and distance pull against each other.** "Heaviest first" ignores distance and does badly. "Shortest" ignores weight, and flying the same loop the other way round, so the heavy zones come first, saves 14%.
+2. **Brute force is the answer key, and it only works because farm 1 is tiny.** It checks 40,320 orders in under a second. Farm 2 has 14 zones: 87 billion orders, weeks of computing on a laptop. Try `--farm 3`: the rules of thumb still work there, but nothing tells you how far from the best they are. That's what search is for.
 
 ---
 
@@ -225,10 +265,10 @@ If something doesn't match, compare with the finished files:
 
 | File | What it is |
 |---|---|
-| `finished/my_first_search.py` | Steps 1–6, complete. Run with `--test20` for step 6. |
-| `finished/follow_the_slope.py` | The bonus, complete, with three levels, restarts and `--runs`. |
+| `finished/my_first_search.py` | Steps 1–7, complete. Run with `--test20` for step 7. |
+| `finished/rules_of_thumb.py` | The bonus, complete. `--farm N` for the other farms. |
 | `finished/test_finished.py` | Checks that the finished files still give the numbers quoted on this page. |
 
 ## Where next
 
-**[Lab 01 · Reach search](../01-reach-search/README.md):** hill-climbing, restarts, stochastic hill-climbing and simulated annealing from FNC Chapter 3, on the same arm. You've already built the hard part: a score, a search loop, and a way to watch it.
+**Lab 01 · Route search** (being rebuilt for the drone): hill-climbing, restarts, stochastic hill-climbing and simulated annealing from FNC Chapter 3, on the same farms. You've already built the hard part: a score, a search loop, and a way to watch it.

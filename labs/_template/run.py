@@ -2,11 +2,11 @@
 
 Copy this folder to start a new lab:
 
-    cp -r labs/_template labs/02-my-lab
-    python3 -m viewer                          # terminal 1 (repo root)
-    python3 labs/02-my-lab/run.py --tries 500  # terminal 2
+    cp -r labs/_template labs/01-my-lab
+    python3 -m viewer                                    # terminal 1 (repo root)
+    python3 labs/01-my-lab/run.py --farm 3 --tries 500   # terminal 2
 
-It shows the three things every lab does: pick a Level, score poses, and record
+It shows the three things every lab does: pick a Farm, score routes, and record
 them with a Trace so the viewer can replay the run. Replace the search with yours.
 """
 import argparse
@@ -16,43 +16,36 @@ import sys
 from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[2]), str(Path(__file__).resolve().parent)]  # repo root + this lab
 
-from armlab.kinematics import LIMITS, tcp
-from armlab.world import collides
-from levels import get_level
+from farmlab.farms import BEST_KNOWN, get_farm
+from farmlab.flight import route_score
 from viewer.trace import Trace
 
 LAB = Path(__file__).resolve().parent.name     # traces go to traces/<this folder name>/
 
 
-def score(pose, level):
-    """Lower is better: metres from the target, plus 10 if the arm hits something."""
-    return math.dist(tcp(pose), level.target) + (10.0 if collides(pose, level) else 0.0)
-
-
-def random_search(level, tries, rng, rec):
+def random_search(farm, tries, rng, rec):
     best, best_s = None, math.inf
     for _ in range(tries):
-        pose = list(level.start)
-        for j in level.free:
-            pose[j] = rng.randint(*LIMITS[j])
-        s = score(pose, level)
+        route = list(range(len(farm.zones)))
+        rng.shuffle(route)
+        s = route_score(route, farm)               # Wh, lower is better
         better = s < best_s
-        rec.tried(pose, s, accepted=better)    # the viewer moves the solid arm only on accepted poses
+        rec.tried(route, s, accepted=better)       # the viewer changes the route only on accepted ones
         if better:
-            best, best_s = tuple(pose), s
+            best, best_s = route, s
     return best, best_s
 
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--level", type=int, default=1)
+    p.add_argument("--farm", type=int, default=1)
     p.add_argument("--tries", type=int, default=500)
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
-    level = get_level(args.level)
-    rec = Trace(level, "random search", note=f"{args.tries} tries, seed {args.seed}", lab=LAB)
-    best, s = random_search(level, args.tries, random.Random(args.seed), rec)
-    print(f"best {best}  score {s:.3f}")
+    farm = get_farm(args.farm)
+    rec = Trace(farm, "random search", note=f"{args.tries} tries, seed {args.seed}", lab=LAB)
+    best, s = random_search(farm, args.tries, random.Random(args.seed), rec)
+    print(f"best {best}  {s:.1f} Wh  (best known {BEST_KNOWN.get(farm.number, '?')} Wh)")
     rec.save(best=best)
 
 

@@ -4,7 +4,7 @@
     python3 -m viewer.demo   send a demo trace to check it works
     python3 -m viewer.show   replay a saved trace (or list a folder of them)
 
-    viewer/index.html        the three.js page
+    viewer/index.html        the three.js page: the farm, the drone, the routes
     viewer/trace.py          Trace: how a lab sends a run to the page
     viewer/TRACE_FORMAT.md   the JSON format, if you want to write traces another way
 """

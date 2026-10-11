@@ -1,49 +1,49 @@
-"""Checks that the finished Start Here files still work (they're the reference for the README).
+"""Checks that the finished Start Here files still give the numbers quoted in the README.
 
     python3 labs/00-start-here/finished/test_finished.py
 """
-import math
 import random
 import sys
 from pathlib import Path
 sys.path[:0] = [str(Path(__file__).resolve().parents[3]), str(Path(__file__).resolve().parent)]
 
-import follow_the_slope as fts
 import my_first_search as mfs
-from armlab.kinematics import FOLDED, tcp
+import rules_of_thumb as rot
+from farmlab.flight import fly, route_score
 
 
-def test_where_is_the_gripper():
-    assert all(abs(a - b) < 1e-9 for a, b in zip(tcp((0, 0, 0, 0, 0, 0)), (2.0, 0.6, 0.0)))
-    assert all(abs(a - b) < 1e-9 for a, b in zip(tcp((0, 90, 0, 0, 0, 0)), (0.0, 2.6, 0.0)))
-    assert all(abs(a - b) < 1e-9 for a, b in zip(tcp((90, 0, 0, 0, 0, 0)), (0.0, 0.6, -2.0)))
+def r1(x):
+    return round(x, 1)
 
 
-def test_score_from_rest():
-    assert abs(mfs.score(FOLDED) - 0.842) < 1e-3, "README step 4 says 84.2 cm"
+def test_one_leg():
+    z7 = mfs.farm.zones[6]
+    assert mfs.leg_energy(mfs.farm.base, (z7.x, z7.y), 45) == 56.25, "README step 3: 125 m with 45 kg is 56.25 Wh"
+
+
+def test_route_energy_matches_readme_and_farmlab():
+    r = list(range(8))
+    assert r1(mfs.route_energy(r)) == 280.3 and r1(mfs.route_energy(r[::-1])) == 268.3, "README step 4"
+    rng = random.Random(5)
+    for _ in range(50):
+        rng.shuffle(r)
+        assert abs(mfs.route_energy(r) - route_score(r, mfs.farm)) < 1e-9, "your score must agree with farmlab's"
 
 
 def test_random_search_matches_readme():
     best, s = mfs.random_search(2000, random.Random(0), mfs.NoRecord())
-    assert abs(s - 0.268) < 1e-3, "README step 5 says 26.8 cm for seed 0"
-    wins = sum(mfs.random_search(2000, random.Random(k), mfs.NoRecord())[1] < 0.05 for k in range(20))
-    assert wins == 0, "README step 6 says 0 of 20"
+    assert r1(s) == 168.8, "README step 6 says 168.8 Wh for seed 0"
+    wins = sum(mfs.random_search(2000, random.Random(k), mfs.NoRecord())[1] <= 143.4 * 1.01 for k in range(20))
+    assert wins == 0, "README step 7 says 0 of 20 with 2,000 tries"
 
 
-def test_slope_points_downhill():
-    lv = fts.LEVELS[1]
-    g = fts.slope(lv.start, lv)
-    stepped = tuple(a - gi for a, gi in zip(lv.start, g))
-    assert fts.error(stepped, lv) < fts.error(lv.start, lv)
-
-
-def test_gradient_descent_matches_readme():
-    best, s, e = fts.gradient_descent(fts.LEVELS[1].start, fts.LEVELS[1])
-    assert s < 0.002 and e == 148, "README bonus says about 0.1 cm in 148 evaluations"
-    best, s, e = fts.gradient_descent(fts.LEVELS[2].start, fts.LEVELS[2])
-    assert s > 0.5, "level 2: stuck against the post"
-    best, s, e = fts.with_restarts(fts.LEVELS[2], 5, random.Random(3))
-    assert s < 0.01
+def test_rules_of_thumb_match_readme():
+    farm = mfs.farm
+    assert r1(route_score(rot.nearest_first(farm), farm)) == 166.7
+    assert r1(route_score(rot.heaviest_first(farm), farm)) == 237.4
+    shortest = rot.every_order(farm, lambda r: fly(r, farm).distance_m)
+    assert r1(route_score(shortest, farm)) == 166.6 and r1(route_score(shortest[::-1], farm)) == 143.4
+    assert r1(route_score(rot.every_order(farm, lambda r: route_score(r, farm)), farm)) == 143.4
 
 
 if __name__ == "__main__":

@@ -1,101 +1,87 @@
-# DSU CSCI 558 · Arm Search Lab
+# DSU CSCI 558 · Farm Drone Lab
 
 *Hands-on labs for **CSCI 558 Nature Inspired Computing** at Delaware State University (DSU).*
 
-**Teach a robot arm to find its target by trial and error, and watch how different search strategies succeed, get stuck, or escape.**
+**Plan a crop-spraying drone's route across a farm, and watch how different search strategies find cheap routes, get stuck, or escape.**
 
-![The 3D viewer replaying a search on the "around the post" level](docs/viewer.png)
+![The 3D viewer: the drone spraying zone Z4 on the obstacle farm. The corn turns from pale yellow to green where it's been sprayed.](docs/screenshots/hero.jpg)
 
-You write the search algorithm in Python. A 3D viewer in your browser replays every guess it made: the orange arm is where the search *is*, the see-through blue arm is the pose it's *trying*, and the coloured line traces where the gripper has been.
+You write the search algorithm in Python. A 3D viewer in your browser replays every route it tried, then flies the best one: the drone takes off, sprays each zone, and comes back to refill, with its battery and tank draining as it goes.
+
+## What you'll see
+
+| | |
+|---|---|
+| ![A search being replayed on farm 3](docs/screenshots/search-replay.jpg) | ![The same farm from above, with the route split into trips](docs/screenshots/top-trips.jpg) |
+| **Watching a search.** The coloured lines are the route the search has now, one colour per trip back to base. The blue dashes are the route it's trying next. Zones still short of fertiliser are pale yellow. | **Trips from above.** A 20 L tank can't do all 14 zones, so the route splits into trips. The drone flies round the windbreak, the silo, the power line, the barn and the farmhouse's no-fly zone. |
+| ![Lab 00's farm: eight zones, one trip](docs/screenshots/farm1.jpg) | ![Following the drone on the windy farm, with the battery and tank gauges](docs/screenshots/follow-wind.jpg) |
+| **Farm 1, from lab 00.** Eight zones, one tank. This is the cheapest of all 40,320 orders, found by brute force. | **Follow the drone.** Battery and tank gauges drain leg by leg, and the panel explains what each leg costs. On farm 4 a wind from the north-east makes some directions more expensive. |
 
 ---
 
 ## What is this, in plain terms?
 
-A factory robot arm has six motors, one at each joint: base, shoulder, elbow and three in the wrist. To pick something up, it needs the right **angle for every motor** so the gripper lands exactly on the object. Working out those angles is called **inverse kinematics**.
+A spraying drone, like the one on campus, carries a tank of liquid fertiliser. A soil test says which parts of a field are short of nutrients, and how much each one needs. The drone has to visit every one of those **zones**, spray it, and come home.
 
-**Why not just calculate the answer?** For an arm with two joints you can, using the law of cosines from trigonometry. Lab 01 has you do exactly that. But add more motors, an obstacle in the way, or a rule like "the gripper must point straight down", and there's no neat formula any more.
+Two things make it hard:
+- **Fertiliser is heavy.** A full 20 L tank weighs 20 kg, almost as much as the drone. Carrying weight costs battery, so it matters *which zones you spray first*. Spraying a zone that needs a lot early on makes every later flight cheaper.
+- **The tank and battery are limited.** On a big field the drone has to fly back to base to refill and swap batteries, so the route breaks into **trips**. Later farms add obstacles to fly round (trees, a silo, power lines, a no-fly zone round the farmhouse) and a wind that makes some directions cost more than others.
 
-**Why not try every possibility?** If each of the six motors can be set to any whole degree, there are 360⁶ ≈ **2 quadrillion** possible poses. Checking a billion poses per second would take about 25 days. That's for one target.
+**Why not just calculate the answer?** There's no formula. **Why not try every possibility?** With 8 zones there are 40,320 orders, and a laptop checks them all in under a second. With 14 zones there are **87 billion**, which would take weeks. Real farms have more.
 
 So instead we **search**: make a guess, score it, and use the score to make a better guess. That's the subject of this project and of Chapter 3 of our textbook.
 
 ## The big idea: a landscape you can't see
 
-Give every possible pose a **score**: how far the gripper ends up from the target. Lower is better, and 0 means you've hit it exactly.
+Give every possible route a **score**: the energy it uses, in watt-hours (Wh). Lower is better.
 
-Now picture all those scores as a landscape. Every pose is a spot on the map, and its score is the height of the ground there. Finding the best pose means finding the **lowest point** on the map.
+Now picture all those scores as a landscape. Every route is a spot on the map, and its score is the height of the ground there. Finding the best route means finding the **lowest point** on the map.
 
-The catch is that you're standing on it **in thick fog.** You can only feel the ground right around your feet: you can test a few nearby poses, but you can't see the whole map. Every search algorithm is a strategy for walking in that fog:
+The catch is that you're standing on it **in thick fog.** You can only feel the ground right around your feet: you can try routes that are a small change from yours, like swapping two zones, but you can't see the whole map. Every search algorithm is a strategy for walking in that fog:
 
-- **Hill-climbing:** always step to whichever nearby spot is lowest. It's fast and simple, but when every step around you goes up, you stop, even if you're in a small dip halfway up a mountain. That dip is a **local optimum**. The true lowest point is the **global optimum**.
-- **Restarts:** walk downhill from several random places and keep the best result.
-- **Stochastic hill-climbing and simulated annealing:** *sometimes* take a step **uphill** on purpose, so you can climb out of a small dip and find a deeper one.
-- **Genetic algorithm:** send out a whole crowd of walkers, keep the ones that end up lowest, and combine their "directions" to make the next crowd.
-
-For the two-motor level, the viewer actually **draws the landscape**: a heat map of every possible pose, with the path your search took drawn on top. You can watch hill-climbing get stuck in a dip you can see.
+- **Hill-climbing:** always take whichever small change helps most. It's fast and simple, but when no small change helps, you stop, even if a much better route exists elsewhere. That dip is a **local optimum**. The true lowest point is the **global optimum**.
+- **Restarts:** walk downhill from several random routes and keep the best result.
+- **Stochastic hill-climbing and simulated annealing:** *sometimes* accept a **worse** route on purpose, so you can climb out of a small dip and find a deeper one.
+- **Genetic algorithm:** keep a whole population of routes, let the cheapest ones "breed", and combine their good parts.
+- **Ant colony:** many simple agents build routes and leave a trail on good connections for the others to follow. This is the method that was invented for routing problems like this one.
 
 ---
 
 ## How this ties to Chapter 3
 
-Our textbook is *Fundamentals of Natural Computing* by Leandro de Castro. Chapter 3, "Evolutionary Computing", treats problem solving as a **search**, then builds up from the simplest search method to ones inspired by evolution. This project follows the same path. The book uses a curvy one-variable function, g(x); here the same algorithms move a robot arm.
+Our textbook is *Fundamentals of Natural Computing* by Leandro de Castro. Chapter 3, "Evolutionary Computing", treats problem solving as a **search**, then builds up from the simplest search method to ones inspired by evolution. This project follows the same path. The book uses a curvy one-variable function, g(x), and the travelling salesman problem; here the same algorithms plan a drone's spraying route.
 
 | Chapter 3 | What the book says | Where you'll see it here |
 |---|---|---|
-| **3.2 Problem solving as a search task** (p. 62) | Every search needs a *representation* (what a candidate answer looks like), an *objective* (what you want), and an *evaluation function* (how good a candidate is). | **Representation:** six motor angles. **Objective:** put the gripper on the target. **Evaluation:** distance to the target, plus a penalty for hitting things. Every lab is built on these three. |
-| **3.3.1 Hill climbing**, Algorithm 3.1 (pp. 65–66) | Keep moving to a better neighbouring point until none is better. | Lab 01, Step 4. Recorded examples 1–3 show it getting stuck, including a surprise: the *way you define a "neighbour"* can create dead ends. |
-| **Iterated hill climbing**, Algorithm 3.2 (pp. 66–67) | Run hill-climbing from many random starting points and keep the best. | Lab 01, Step 6 and example 5. This turns out to be one of the strongest methods here. |
-| **Stochastic hill climbing**, Algorithm 3.3 (p. 68) | Accept a *worse* point with some probability, controlled by a "temperature" T. | Lab 01, Step 7 and example 6. The viewer counts **worse moves taken** and explains each one. |
-| **3.3.2 Simulated annealing**, Algorithms 3.4–3.5 (pp. 68–71) | Start with a high temperature and cool it down slowly, like hardening metal: lots of wandering early, careful steps late. | Lab 01, Step 8 and examples 7–9. The dashed line in the score chart is the temperature cooling. |
-| **3.4–3.5 Evolution and genetic algorithms** (pp. 73–99) | A population of candidates, encoded as bit strings, improved by selection, crossover and mutation. | Lab 01, Step 11 (stretch): the six angles become a 48-bit "chromosome". |
-| **3.5.4 Comparing hill climbing, annealing and GAs** (p. 99) | The random methods can escape local optima "due to their stochastic nature". The book compares them to kangaroos looking for Mount Everest. | Lab 01, Part E: you compare every method fairly on the same levels and seeds. |
+| **3.2 Problem solving as a search task** (p. 62) | Every search needs a *representation*, an *objective*, and an *evaluation function*. | **Representation:** the order to spray the zones in. **Objective:** spray every zone. **Evaluation:** the energy used, from `farmlab`. Lab 00 has you write all three. |
+| **3.3.1 Hill climbing**, Algorithms 3.1–3.2 (pp. 65–67) | Move to a better neighbouring point until none is better; restart from random points. | Lab 01. A "neighbour" is a route with two zones swapped, or a section reversed, and *which* you choose changes where it gets stuck. |
+| **Stochastic hill climbing and simulated annealing**, Algorithms 3.3–3.5 (pp. 68–71) | Accept a *worse* point with some probability controlled by a temperature T, and cool T slowly. | Lab 01. The viewer counts **worse moves taken** and explains each one. |
+| **3.4–3.5 Evolution and genetic algorithms** (pp. 73–99) | A population of candidates improved by selection, crossover and mutation. | Lab 02. A route can't be crossed over like a bit string without visiting some zones twice, so the encoding decides the operators. |
+| **3.5.4 Comparing hill climbing, annealing and GAs** (p. 99) | The random methods can escape local optima "due to their stochastic nature". The book compares them to kangaroos looking for Mount Everest. | Every lab compares methods fairly: same farms, same seeds, same number of evaluations. |
 
-The book's kangaroo comparison (from Sarle, 1993, quoted on p. 99) is the whole project in one picture:
-- In **hill-climbing**, a kangaroo hops uphill and stops at the top of whatever hill it started on.
-- In **simulated annealing**, "the kangaroo is drunk and hops around randomly for a long time", then gradually sobers up.
-- In a **genetic algorithm**, lots of kangaroos are dropped in at random, and the ones that end up low are removed each generation, so the survivors are the ones that climbed high.
-
-(The book climbs *up* to the highest point; we go *down* to the lowest score. It's the same idea upside down.)
-
-**Lab 00's bonus step is the one exception.** It uses *gradient descent*, which isn't in Chapter 3: it needs the *slope* of the landscape, not just the score at each point. It's included as a contrast. The companion textbook, Eberhart and Shi's *Computational Intelligence* (Chapter 3), points out that evolutionary methods use the score directly, "instead of function derivatives", so they still work when the slope isn't available.
+(The book climbs *up* to the highest point; we go *down* to the lowest energy. It's the same idea upside down.)
 
 ---
 
 ## What you'll discover
 
-Without giving away the answers, here are three lessons the labs are built around:
+Some lessons the labs are built around. Lab 00 shows the first two for itself:
 
-1. **How you define a "step" matters as much as the algorithm.** If hill-climbing may only move one motor at a time (10° per step), it gets stuck 35 cm from the target, in open space, with nothing in the way. Let it move two motors at once and it walks straight there.
-2. **Simple can beat clever.** Restarting plain hill-climbing from random places often beats simulated annealing. On the "around the post" level it succeeded in 19 of 20 runs, against annealing's 7 of 20.
-3. **There's no best algorithm, only a best algorithm for a given landscape.** On the six-motor level, change how much the score cares about the gripper's angle and the winner flips: annealing goes from losing to winning.
-
-And one you'll see for yourself: the arm sometimes reaches **backwards over its own head**, 17 cm short of the target. It's a near miss that's very hard to escape. Watch recorded example 8 to see it.
+1. **Weight changes everything.** On farm 1 the shortest loop round the zones costs 166.6 Wh. **Fly the same loop the other way round** and it costs 143.4 Wh, 14% less, over exactly the same 443 m. That's the best route there is.
+2. **Rules of thumb aren't enough.** "Always go to the nearest zone" is 16% worse than the best on farm 1. "Spray the heaviest zones first" is 66% worse. Random guessing with 2,000 tries never gets within 1% of the best.
+3. **There's no best algorithm, only a best algorithm for a given landscape.** Obstacles, wind and a worn battery reshape the landscape, and the ranking of the methods changes with it.
 
 ---
 
 ## How this relates to industry
 
 **What's realistic here:**
-- **Simulate first.** Real robot programs are built and tested on a simulated arm before they run on the real one, with tools like ABB RobotStudio, RoboDK and Siemens Process Simulate, or Gazebo and NVIDIA Isaac Sim in research and ROS. This viewer is a much simpler version of the same idea.
-- **Score it, search, watch, and repeat over many seeds.** That's how engineers compare and tune algorithms. One run of a random method proves nothing, in industry as much as in class.
-- **Random restarts.** They're used in real solvers, not just in class. TRAC-IK, a popular inverse-kinematics solver for ROS, restarts from random poses when it gets stuck: the same trick as iterated hill-climbing in lab 01.
-- **"Find the pose" and "find a safe path to it" are separate problems.** That's why an arm in the replay can appear to pass through the post (lab 01 explains this). Real systems solve the second problem with *motion planning*.
+- **Spray drones are real farm equipment.** Commercial models carry tanks of tens of litres. Operators really do plan around tank size and battery life, with refills and battery swaps at the field edge.
+- **Different parts of a field need different amounts.** Applying fertiliser according to a soil-test map is called *variable-rate application*, a core idea in precision agriculture. Our zones are a simple version of that map.
+- **Simulate first, and compare over many runs.** Planning tools are tested in simulation, and one run of a random method proves nothing, in industry as much as in class.
+- **This is a vehicle routing problem.** Deciding which stops a vehicle makes, in what order, with limited capacity and refills, is one of the most studied problems in operations research. Genetic algorithms, simulated annealing and ant colony methods are standard tools for it, in delivery logistics as well as on farms.
 
-**What's simplified:** for a standard six-motor factory arm, nobody uses a genetic algorithm just to reach a point. Most industrial arms are built so their angles can be calculated exactly with trigonometry, like lab 01's two-motor answer key, in a few microseconds. The usual fallback follows the slope, like lab 00's bonus step. We use reaching because it's easy to *see*, not because it's how factories do it.
-
-**Where nature-inspired methods are really used:**
-
-| Problem | Method | Example |
-|---|---|---|
-| Reaching with extra goals: keep the gripper level, avoid obstacles, stay away from joint limits | Evolutionary methods mixed with slope-following | **bio_ik**, an inverse-kinematics solver for the ROS motion-planning framework MoveIt, built around an evolutionary algorithm |
-| Smooth, collision-free motions | Stochastic optimisation | **STOMP** improves a path by trying randomly wiggled versions of it, close in spirit to stochastic hill-climbing (lab 01) |
-| The order of tasks (which weld or pick comes next) | Genetic algorithms, simulated annealing, ant colonies | Essentially the travelling salesman problem: what the Ant System paper (lab 05) solves |
-| Where to place the robot and parts in a work cell | Genetic algorithms, simulated annealing | Minimise reaching distance and cycle time |
-| Tuning controllers | Genetic algorithms, particle swarms (lab 04), evolution strategies | Tuning a motor's controller gains or the parameters of a walking gait |
-| *Training* a robot's behaviour | Mostly reinforcement learning in simulation; also evolution strategies (lab 03) | Learning to grasp or walk in simulation, then moving it to the real robot. In 2017 OpenAI showed evolution strategies can match reinforcement learning on some of these tasks. |
-
-**One distinction to keep:** these labs *search* for one answer at a time. Each new target is a new search. *Training* means learning something that works for every target at once. Lab 06, where a neural network learns to reach, is the first step from searching toward training.
+**What's simplified:** the energy model is a teaching model (see the [guide](docs/GUIDE.md#the-energy-model)). Spraying, take-off and landing cost nothing, and crosswind is ignored. The drone visits each zone's centre rather than sweeping every row. The numbers are round on purpose, so you can check them with a calculator.
 
 ---
 
@@ -103,15 +89,14 @@ And one you'll see for yourself: the arm sometimes reaches **backwards over its 
 
 | Word | Meaning |
 |---|---|
-| **Pose** | One setting of all six motor angles, e.g. (0°, 90°, −90°, 0°, 0°, 0°). One point on the landscape. |
-| **Joint / motor** | A place where the arm bends or turns. A1 is the base, A2 the shoulder, A3 the elbow, A4–A6 the wrist. |
-| **Forward kinematics** | Angles → where the gripper ends up. Easy: just trigonometry. The project does this for you. |
-| **Inverse kinematics** | Where the gripper should go → which angles. Hard. This is what the searches solve. |
-| **Score** (evaluation function) | How bad a pose is: distance to the target in metres, plus penalties. Lower is better. |
-| **Neighbour** | A pose that's one small step away, such as one motor turned 1°. |
-| **Local optimum** | A pose where every neighbour is worse, but which isn't the best overall: a dip, not the valley floor. |
-| **Global optimum** | The best pose of all. |
-| **Temperature (T)** | In stochastic methods, how willing the search is to accept a worse step. High T means adventurous; low T means cautious. |
+| **Zone** | A patch of the field that needs fertiliser, e.g. "Z3 · 3 L". |
+| **Route** | The order to spray the zones in, e.g. `[2, 0, 3, 1]`. One point on the landscape. |
+| **Trip** | One flight from the base and back. A route is split into trips when the tank or battery runs out. |
+| **Score** (evaluation function) | The energy a route uses, in watt-hours (Wh). Lower is better. |
+| **Neighbour** | A route that's one small change away, such as two zones swapped. |
+| **Local optimum** | A route where every neighbour is worse, but which isn't the best overall: a dip, not the valley floor. |
+| **Global optimum** | The best route of all. **Best known** is the best anyone has found when nobody can check them all. |
+| **Temperature (T)** | In stochastic methods, how willing the search is to accept a worse route. High T means adventurous; low T means cautious. |
 | **Seed** | The starting number for the random-number generator. The same seed gives the same "random" run, so results can be repeated and compared. |
 | **Trace** | A saved recording of one search run, which the viewer replays. |
 
@@ -125,25 +110,24 @@ You need **Python 3.8 or newer** (nothing to install) and a web browser with int
 git clone https://github.com/code-rhino/dsu-csci558-nature-inspired-computing-labs.git
 cd dsu-csci558-nature-inspired-computing-labs
 python3 -m viewer          # window 1: opens the 3D viewer in your browser. Leave it running.
-python3 -m viewer.demo     # window 2: the arm waves each motor. If you see that, it works.
+python3 -m viewer.demo     # window 2: three routes, then the drone flies one. If you see that, it works.
 ```
 
 Then pick a lab:
 
 | Lab | What it is | You write |
 |---|---|---|
-| **[00 · Start here](labs/00-start-here/README.md)** | Type along: every line of code is in the README. In about 45 minutes you make the arm move, score its poses, write a random search and measure it, with gradient descent as a bonus. | `my_first_search.py`, by following the page |
-| **[01 · Reach search](labs/01-reach-search/README.md)** | The Chapter 3 lab: hill-climbing, restarts, stochastic hill-climbing, simulated annealing, and a genetic algorithm as a stretch goal. Eleven steps, each with a by-hand exercise, a test, and a way to watch it. | `climb.py` |
-| [Recorded runs for lab 01](labs/01-reach-search/examples/README.md) | Nine saved runs of a finished lab 01 that you can watch before you start. | nothing |
-| **[02 · Genetic algorithm](labs/02-genetic-algorithm/README.md)** | Evolve poses: binary chromosomes, roulette selection, crossover, mutation, elitism. The viewer draws the whole population at once. Eight steps, plus experiments that compare it against lab 01. | `ga.py` |
+| **[00 · Start here](labs/00-start-here/README.md)** | Type along: every line of code is in the README. In about 45 minutes you work out what a flight costs, score whole routes, watch the drone fly them, write a random search and measure it honestly. Bonus: rules of thumb vs. the answer key. | `my_first_search.py`, by following the page |
 
-**Coming next**, in the same order as the course: evolution strategies, particle swarms, ant colonies for task ordering and safe paths, a neural network that learns to reach, and a fuzzy controller. Each comes with its textbook reading; see the **[roadmap](docs/ROADMAP.md)**.
+**Coming next**, in the same order as the course: hill-climbing and simulated annealing, genetic algorithms, evolution strategies, particle swarms, ant colonies for routes and safe paths, a neural network that learns the energy model, and a fuzzy controller. Each comes with its textbook reading; see the **[roadmap](docs/ROADMAP.md)**.
 
 **Every lab starts with a "Read first" table** listing the textbook sections and pages to review before you begin.
 
 **About answers:** the labs give you starting code, tests and hints, not solutions. If your class uses these exercises for credit, follow its rules on collaboration and AI help, and don't post your finished files publicly.
 
-**For the technical details** (how the code is organised, the arm's exact measurements, every viewer feature, how to add your own lab, and troubleshooting), see the **[project guide](docs/GUIDE.md)**.
+**For the technical details** (how the code is organised, the energy model, the farms, every viewer feature, how to add your own lab, and troubleshooting), see the **[project guide](docs/GUIDE.md)**.
+
+The earlier robot-arm version of these labs is kept at the git tag `robot-arm-v1`.
 
 ---
 

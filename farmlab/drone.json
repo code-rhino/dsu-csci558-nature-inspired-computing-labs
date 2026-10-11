@@ -1,0 +1,15 @@
+{
+  "name": "Farm sprayer drone (illustrative numbers, chosen to be easy to calculate by hand)",
+  "empty_mass_kg": 25.0,
+  "tank_l": 20.0,
+  "kg_per_l": 1.0,
+  "wh_per_kg_m": 0.01,
+  "battery_wh": 500.0,
+  "cruise_m_s": 6.0,
+  "spray_l_s": 0.15,
+  "cruise_alt_m": 8.0,
+  "spray_alt_m": 4.5,
+  "clearance_m": 3.0,
+  "rotors": 6,
+  "arm_m": 1.1
+}

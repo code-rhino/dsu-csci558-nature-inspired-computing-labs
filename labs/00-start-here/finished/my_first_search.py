@@ -1,9 +1,9 @@
-"""Start Here, finished: everything from steps 1-6 of the README in one file.
+"""Start Here, finished: everything from steps 1-7 of the README in one file.
 
 Compare it with your own labs/00-start-here/my_first_search.py.
 
     python3 labs/00-start-here/finished/my_first_search.py           # one search, sent to the viewer
-    python3 labs/00-start-here/finished/my_first_search.py --test20  # step 6: 20 seeds
+    python3 labs/00-start-here/finished/my_first_search.py --test20  # step 7: 20 seeds
 """
 import math
 import random
@@ -11,76 +11,84 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))   # the repo root, so the imports below work
 
-from armlab.kinematics import FOLDED, LIMITS, tcp
-from armlab.world import Level, collides
+from farmlab.farms import get_farm
+from farmlab.flight import route_score
 from viewer.trace import Trace
 
-# Step 3: the task
-level = Level(1, "My first target", free=(0, 1, 2), start=FOLDED, target=(1.2, 1.0, 0.5), floor=True,
-              blurb="Base, shoulder and elbow move. Reach the yellow ball without going through the floor.")
+farm = get_farm(1)
+
+EMPTY_KG = 25.0          # the drone with its battery and an empty tank
+WH_PER_KG_M = 0.01       # energy to carry 1 kg for 1 m
 
 
-def glide(rec, a, b, steps=30):
-    """Step 3: record `steps` poses on a straight line from pose a to pose b."""
-    for i in range(1, steps + 1):
-        t = i / steps
-        pose = tuple(x + (y - x) * t for x, y in zip(a, b))
-        rec.moved(pose, score(pose))
+# Step 3: one leg
+def leg_energy(a, b, mass_kg):
+    """Wh to fly in a straight line from point a to point b carrying mass_kg in total."""
+    return WH_PER_KG_M * mass_kg * math.dist(a, b)
 
 
-# Step 4: the score
-def score(pose):
-    """How far the gripper is from the target, in metres. Hitting the floor costs 10 extra."""
-    d = math.dist(tcp(pose), level.target)
-    if collides(pose, level):
-        d += 10
-    return d
+# Step 4: a whole route (farm 1 is a single trip: everything fits in one tank)
+def route_energy(route):
+    """Wh to take off with all the fertiliser, spray the zones in `route` order, and fly home."""
+    load = sum(farm.zones[z].need_l for z in route)       # litres, and 1 L weighs 1 kg
+    here = farm.base
+    total = 0.0
+    for z in route:
+        zone = farm.zones[z]
+        total += leg_energy(here, (zone.x, zone.y), EMPTY_KG + load)
+        load -= zone.need_l
+        here = (zone.x, zone.y)
+    total += leg_energy(here, farm.base, EMPTY_KG + load)
+    return total
 
 
-# Step 5: random search
-def random_pose(rng):
-    pose = list(level.start)
-    for j in level.free:
-        lo, hi = LIMITS[j]
-        pose[j] = rng.randint(lo, hi)
-    return tuple(pose)
+# Step 6: random search
+def random_route(rng):
+    route = list(range(len(farm.zones)))
+    rng.shuffle(route)
+    return route
 
 
 def random_search(tries, rng, rec):
-    best = level.start
-    best_score = score(best)
+    best = list(range(len(farm.zones)))
+    best_score = route_energy(best)
     rec.restart(best, best_score)
     for _ in range(tries):
-        pose = random_pose(rng)
-        s = score(pose)
+        route = random_route(rng)
+        s = route_energy(route)
         better = s < best_score
-        rec.tried(pose, s, accepted=better)
+        rec.tried(route, s, accepted=better)
         if better:
-            best, best_score = pose, s
+            best, best_score = route, s
     return best, best_score
 
 
-# Step 6: how good is it, really?
+# Step 7: how good is it, really?
 class NoRecord:
+    """Stands in for Trace when you don't want to record (much faster)."""
     def restart(self, *a): pass
     def tried(self, *a, **k): pass
+
+
+BEST_KNOWN = 143.4       # Wh: the cheapest of all 40,320 orders (the bonus step finds it)
 
 
 def test20(tries=2000):
     wins = 0
     for seed in range(20):
         best, s = random_search(tries, random.Random(seed), NoRecord())
-        print(f"seed {seed:2}: {s * 100:5.1f} cm")
-        wins += s < 0.05
-    print(f"within 5 cm: {wins} of 20")
+        print(f"seed {seed:2}: {s:6.1f} Wh  ({100 * (s / BEST_KNOWN - 1):4.1f}% above the best)")
+        wins += s <= BEST_KNOWN * 1.01
+    print(f"within 1% of the best: {wins} of 20")
 
 
 if __name__ == "__main__":
     if "--test20" in sys.argv:
         test20()
     else:
-        rec = Trace(level, "random search", lab="00-start-here")
+        assert abs(route_energy([0, 1, 2, 3, 4, 5, 6, 7]) - route_score([0, 1, 2, 3, 4, 5, 6, 7], farm)) < 1e-9
+        rec = Trace(farm, "random search", lab="00-start-here")
         best, s = random_search(2000, random.Random(0), rec)
-        print("best pose:", best)
-        print(f"distance: {s * 100:.1f} cm")
+        print("best route:", best)
+        print(f"energy: {s:.1f} Wh")
         rec.save()
